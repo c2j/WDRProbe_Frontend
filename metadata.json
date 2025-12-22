@@ -1,0 +1,5 @@
+{
+  "name": "WDRProbe",
+  "description": "An intelligent analysis tool for GaussDB WDR reports, featuring performance comparison, threshold configuration, and SQL auditing.",
+  "requestFramePermissions": []
+}
