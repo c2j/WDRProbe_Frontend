@@ -21,7 +21,12 @@ const KPICard = ({ title, value, icon: Icon, color }: { title: string; value: st
   </div>
 );
 
-const InstanceCard = ({ instance, onClick }: { instance: InstanceSummary, onClick: () => void }) => {
+interface InstanceCardProps {
+  instance: InstanceSummary;
+  onClick: () => void;
+}
+
+const InstanceCard: React.FC<InstanceCardProps> = ({ instance, onClick }) => {
     const { t } = useI18n();
     const isHealthy = instance.status === 'Healthy';
     const isWarning = instance.status === 'Warning';
