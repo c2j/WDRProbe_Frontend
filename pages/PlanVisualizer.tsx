@@ -1,15 +1,17 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { ApiService } from '../services/apiService';
 import { ExecutionPlanNode } from '../types';
 import { 
   Play, AlertCircle, Database, Zap, FileCode, MousePointer2, 
-  GitBranch, AlignLeft, ChevronDown, 
+  GitBranch, AlignLeft, ChevronDown, ChevronRight, ChevronUp,
   Maximize2, Minimize2, X, Eye, EyeOff,
   BarChart2, Link as LinkIcon, RefreshCw, Layers,
   ZoomIn, ZoomOut, RotateCcw, Search, Table, Scan,
   BookOpen, ThumbsUp, ThumbsDown, HardDrive, XOctagon, 
   FunctionSquare, ListOrdered, Sigma, CheckCircle, Info,
-  Maximize, Minimize
+  Maximize, Minimize, ChevronsDown, ChevronsUp,
+  Clock, Activity
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 
@@ -28,6 +30,7 @@ interface EnhancedNode extends Omit<ExecutionPlanNode, 'children'> {
     nodeId?: string;
     actualRows?: number;
     actualTime?: number;
+    loops?: number; // Added for Analyze
 }
 
 interface PlanIssue {
@@ -41,6 +44,7 @@ interface PlanIssue {
 
 type ViewMode = 'tree' | 'flow';
 type PanelType = 'sql' | 'text' | 'visual';
+type PlanType = 'Explain Only' | 'Explain Analyze' | 'Explain Performance';
 
 interface NodeViewProps {
     node: EnhancedNode;
@@ -51,6 +55,10 @@ interface NodeViewProps {
     onHoverCte: (cte: string | null) => void;
     highlightedTable: string | null;
     highlightedIssueNodes: string[];
+    // Tree view specific props
+    expandedIds?: Set<string>;
+    onToggle?: (uId: string) => void;
+    planType?: PlanType;
 }
 
 // --- Knowledge Base Types & Data ---
@@ -298,7 +306,8 @@ const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey
 };
 
 const TreeNode: React.FC<NodeViewProps> = ({ 
-    node, maxCost, selectedNode, onSelect, hoveredCte, onHoverCte, highlightedTable, highlightedIssueNodes 
+    node, maxCost, selectedNode, onSelect, hoveredCte, onHoverCte, highlightedTable, highlightedIssueNodes,
+    expandedIds, onToggle, planType
 }) => {
     const isSelected = selectedNode?.uId === node.uId;
     const isHighCost = node.percentage > 20;
@@ -307,6 +316,11 @@ const TreeNode: React.FC<NodeViewProps> = ({
     const relatesToTable = highlightedTable && node.operation.includes(highlightedTable);
     const isIssueNode = highlightedIssueNodes.includes(node.uId);
 
+    // Tree collapse state
+    const isExpanded = expandedIds ? expandedIds.has(node.uId) : true;
+    const hasChildren = node.children.length > 0;
+    const hasSingleChild = node.children.length === 1;
+
     // Heuristics for icon display
     const detailsLower = (node.details || '').toLowerCase();
     const hasDiskSpill = detailsLower.includes('disk') || detailsLower.includes('spill') || detailsLower.includes('external merge');
@@ -314,19 +328,26 @@ const TreeNode: React.FC<NodeViewProps> = ({
     const handleCteEnter = () => { if (node.isCteDef || node.isCteScan) onHoverCte(node.cteName); };
     const handleCteLeave = () => { if (node.isCteDef || node.isCteScan) onHoverCte(null); };
 
+    // Display Logic: For Analyze/Performance plans, Actual values are primary
+    const showActual = planType !== 'Explain Only' && node.actualRows !== undefined;
+
     return (
         <div className="flex flex-col items-center">
             <div 
+                id={`plan-node-${node.uId}`}
                 onClick={(e) => { e.stopPropagation(); onSelect(node); }}
                 onMouseEnter={handleCteEnter}
                 onMouseLeave={handleCteLeave}
                 className={`
-                    relative p-3 rounded-lg border-2 shadow-sm cursor-pointer transition-all min-w-[180px] z-10 bg-white
-                    ${isSelected ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}
+                    relative p-3 rounded-lg border-2 shadow-sm cursor-pointer transition-all min-w-[200px] z-10 group
+                    ${
+                        isIssueNode ? 'border-red-500 ring-4 ring-yellow-400 bg-yellow-100 scale-105 z-20 animate-pulse' :
+                        relatesToTable ? 'border-yellow-500 ring-4 ring-yellow-400 bg-yellow-100 scale-105 z-20' :
+                        isHoveredCte ? 'border-gray-200 ring-2 ring-purple-400 bg-purple-50' :
+                        isSelected ? 'border-blue-500 ring-2 ring-blue-200 bg-blue-50' : 
+                        'border-gray-200 bg-white hover:border-blue-300'
+                    }
                     ${isCte ? 'border-dashed' : ''}
-                    ${isHoveredCte ? 'ring-2 ring-purple-400 bg-purple-50' : ''}
-                    ${relatesToTable ? 'ring-2 ring-yellow-400 bg-yellow-50' : ''}
-                    ${isIssueNode ? 'border-red-500 ring-4 ring-red-200 animate-pulse' : ''}
                 `}
             >
                 <div className="absolute top-0 left-0 h-1 bg-gray-100 w-full rounded-t-lg overflow-hidden">
@@ -340,86 +361,230 @@ const TreeNode: React.FC<NodeViewProps> = ({
                     {isHighCost && <AlertCircle size={12} className="text-red-500 ml-1" />}
                     {hasDiskSpill && <span title="Disk Spill" className="ml-1"><HardDrive size={12} className="text-purple-600" /></span>}
                 </div>
-                <div className="mt-1 grid grid-cols-2 gap-x-2 text-[10px] text-gray-500">
-                    <div>Cost: <span className="font-mono text-gray-700">{node.cost.toFixed(1)}</span></div>
-                    <div>Rows: <span className="font-mono text-gray-700">{node.rows}</span></div>
-                    {node.actualTime !== undefined && (
-                        <div className="col-span-2 text-gray-400 border-t border-gray-100 mt-1 pt-1 flex justify-between">
-                             <span>Time:</span> <span className="font-mono text-gray-600">{node.actualTime.toFixed(3)}ms</span>
-                        </div>
+                
+                <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[10px]">
+                    {showActual ? (
+                        <>
+                            {/* Actual Values Primary */}
+                            <div className="col-span-1 text-blue-700 font-bold" title="Actual Time">
+                                A-Time: <span className="font-mono">{node.actualTime?.toFixed(2)}ms</span>
+                            </div>
+                            <div className="col-span-1 text-blue-700 font-bold" title="Actual Rows">
+                                A-Rows: <span className="font-mono">{node.actualRows}</span>
+                            </div>
+                            
+                            {/* Estimated Values Secondary */}
+                            <div className="col-span-1 text-gray-400" title="Estimated Cost">
+                                Cost: <span className="font-mono">{node.cost.toFixed(0)}</span>
+                            </div>
+                            <div className="col-span-1 text-gray-400" title="Estimated Rows">
+                                E-Rows: <span className="font-mono">{node.rows}</span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Estimated Values Primary */}
+                            <div className="col-span-1 text-gray-600 font-medium" title="Estimated Cost">
+                                Cost: <span className="font-mono">{node.cost.toFixed(1)}</span>
+                            </div>
+                            <div className="col-span-1 text-gray-600 font-medium" title="Estimated Rows">
+                                Rows: <span className="font-mono">{node.rows}</span>
+                            </div>
+                            <div className="col-span-2 h-3"></div> {/* Spacer to keep card height consistent */}
+                        </>
                     )}
                 </div>
+
                 {node.isCteDef && <div className="mt-1 text-[9px] bg-purple-100 text-purple-700 px-1 rounded w-fit">CTE: {node.cteName}</div>}
-            </div>
-            {node.children.length > 0 && (
-                <div className="flex flex-col items-center mt-4">
-                    <div className="w-px h-4 bg-gray-300 mb-0"></div>
-                    <div className="relative flex space-x-4 pt-4 border-t border-gray-300">
-                        {node.children.map((child) => (
-                             <div key={child.uId} className="relative flex flex-col items-center">
-                                 <div className="absolute -top-4 w-px h-4 bg-gray-300"></div>
-                                 <TreeNode 
-                                     node={child} 
-                                     maxCost={maxCost} 
-                                     selectedNode={selectedNode} 
-                                     onSelect={onSelect}
-                                     hoveredCte={hoveredCte}
-                                     onHoverCte={onHoverCte}
-                                     highlightedTable={highlightedTable}
-                                     highlightedIssueNodes={highlightedIssueNodes}
-                                 />
-                             </div>
-                        ))}
+
+                {/* Expand/Collapse Toggle */}
+                {hasChildren && onToggle && (
+                    <div 
+                        className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 z-20"
+                        onClick={(e) => { e.stopPropagation(); onToggle(node.uId); }}
+                    >
+                        <div className="bg-white border border-gray-300 rounded-full p-0.5 shadow-sm hover:bg-gray-100 cursor-pointer flex items-center justify-center w-5 h-5 text-gray-500 hover:text-blue-600">
+                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </div>
                     </div>
+                )}
+            </div>
+            
+            {/* Recursively render children if expanded */}
+            {hasChildren && isExpanded && (
+                <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">
+                    {hasSingleChild ? (
+                        <>
+                           {/* Direct single line connection */}
+                           <div className="w-px h-6 bg-gray-300"></div>
+                           <TreeNode 
+                               node={node.children[0]} 
+                               maxCost={maxCost} 
+                               selectedNode={selectedNode} 
+                               onSelect={onSelect}
+                               hoveredCte={hoveredCte}
+                               onHoverCte={onHoverCte}
+                               highlightedTable={highlightedTable}
+                               highlightedIssueNodes={highlightedIssueNodes}
+                               expandedIds={expandedIds}
+                               onToggle={onToggle}
+                               planType={planType}
+                           />
+                        </>
+                    ) : (
+                        <>
+                           {/* Multi-branch connection optimized for clean lines */}
+                           <div className="w-px h-4 bg-gray-300"></div>
+                           
+                           <div className="flex w-full justify-center">
+                               {node.children.map((child, index) => {
+                                    const isFirst = index === 0;
+                                    const isLast = index === node.children.length - 1;
+                                    
+                                    return (
+                                         <div key={child.uId} className="flex flex-col items-center relative">
+                                             {/* Connector Lines */}
+                                             <div className="w-full h-4 relative">
+                                                 {!isFirst && <div className="absolute top-0 left-0 w-1/2 h-px bg-gray-300"></div>}
+                                                 {!isLast && <div className="absolute top-0 right-0 w-1/2 h-px bg-gray-300"></div>}
+                                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-full bg-gray-300"></div>
+                                             </div>
+                                             
+                                             <div className="px-2">
+                                                 <TreeNode 
+                                                     node={child} 
+                                                     maxCost={maxCost} 
+                                                     selectedNode={selectedNode} 
+                                                     onSelect={onSelect}
+                                                     hoveredCte={hoveredCte}
+                                                     onHoverCte={onHoverCte}
+                                                     highlightedTable={highlightedTable}
+                                                     highlightedIssueNodes={highlightedIssueNodes}
+                                                     expandedIds={expandedIds}
+                                                     onToggle={onToggle}
+                                                     planType={planType}
+                                                 />
+                                             </div>
+                                         </div>
+                                    );
+                               })}
+                           </div>
+                        </>
+                    )}
                 </div>
+            )}
+            
+            {/* Show a small indicator if collapsed but children exist */}
+            {hasChildren && !isExpanded && (
+                <div className="w-px h-2 bg-gray-300 mb-0"></div>
             )}
         </div>
     );
 };
 
 const CostFlowView: React.FC<NodeViewProps> = ({ 
-    node, maxCost, selectedNode, onSelect, highlightedTable, highlightedIssueNodes
+    node, maxCost, selectedNode, onSelect, highlightedTable, highlightedIssueNodes, planType
 }) => {
-    const flatten = (n: EnhancedNode, depth: number = 0): Array<{ node: EnhancedNode; depth: number }> => {
-        let res = [{ node: n, depth }];
-        n.children.forEach(c => { res = res.concat(flatten(c, depth + 1)); });
-        return res;
+    const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+
+    const toggleCollapse = (uId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCollapsedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(uId)) next.delete(uId);
+            else next.add(uId);
+            return next;
+        });
     };
-    const flatList = useMemo(() => flatten(node), [node]);
+
+    const flatList = useMemo(() => {
+        const res: Array<{ node: EnhancedNode; depth: number }> = [];
+        const traverse = (n: EnhancedNode, depth: number) => {
+            res.push({ node: n, depth });
+            if (!collapsedIds.has(n.uId)) {
+                n.children.forEach(c => traverse(c, depth + 1));
+            }
+        };
+        traverse(node, 0);
+        return res;
+    }, [node, collapsedIds]);
+
+    const isAnalyze = planType !== 'Explain Only';
 
     return (
-        <div className="bg-white rounded border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded border border-gray-200 overflow-hidden min-w-[800px]">
             <div className="grid grid-cols-12 gap-4 p-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600">
-                <div className="col-span-5">Operation</div>
-                <div className="col-span-2 text-right">Cost</div>
-                <div className="col-span-2 text-right">Rows {node.actualRows !== undefined ? '(Act/Est)' : ''}</div>
-                <div className="col-span-3">Cost Distribution</div>
+                <div className="col-span-6">Operation</div>
+                {isAnalyze ? (
+                    <>
+                         <div className="col-span-2 text-right">Time (Act)</div>
+                         <div className="col-span-2 text-right">Rows (Act/Est)</div>
+                    </>
+                ) : (
+                    <>
+                        <div className="col-span-2 text-right">Cost</div>
+                        <div className="col-span-2 text-right">Rows (Est)</div>
+                    </>
+                )}
+                <div className="col-span-2">Cost Distribution</div>
             </div>
             <div className="divide-y divide-gray-100">
                 {flatList.map(({ node: item, depth }) => {
                     const isSelected = selectedNode?.uId === item.uId;
                     const isHighlighted = highlightedTable && item.operation.includes(highlightedTable);
                     const isIssue = highlightedIssueNodes.includes(item.uId);
+                    
+                    let rowBg = 'hover:bg-gray-50';
+                    if (isSelected) rowBg = 'bg-blue-50';
+                    if (isHighlighted) rowBg = 'bg-yellow-100 text-gray-900 font-medium';
+                    if (isIssue) rowBg = 'bg-yellow-100 border-l-4 border-red-500';
+
                     return (
                         <div 
                             key={item.uId}
+                            id={`plan-node-${item.uId}`}
                             onClick={() => onSelect(item)}
-                            className={`grid grid-cols-12 gap-4 p-2 text-xs hover:bg-gray-50 cursor-pointer items-center 
-                                ${isSelected ? 'bg-blue-50' : ''} 
-                                ${isHighlighted ? 'bg-yellow-50' : ''}
-                                ${isIssue ? 'bg-red-50 border-l-4 border-red-500' : ''}
-                            `}
+                            className={`grid grid-cols-12 gap-4 p-2 text-xs cursor-pointer items-center ${rowBg}`}
                         >
-                            <div className="col-span-5 flex items-center" style={{ paddingLeft: `${depth * 16}px` }}>
-                                <div className="mr-2 text-gray-400">{item.children.length > 0 ? <ChevronDown size={12}/> : <div className="w-3"/>}</div>
-                                <div className="flex flex-col truncate">
-                                    <span className={`truncate font-mono ${item.percentage > 20 ? 'text-red-600 font-bold' : 'text-gray-700'}`}>{item.operation}</span>
-                                    {item.nodeId && <span className="text-[9px] text-gray-400">#{item.nodeId}</span>}
+                            <div className="col-span-6 flex items-center" style={{ paddingLeft: `${depth * 16}px` }}>
+                                <div 
+                                    className="mr-2 text-gray-400 cursor-pointer hover:text-gray-600 w-4 flex justify-center"
+                                    onClick={(e) => item.children.length > 0 && toggleCollapse(item.uId, e)}
+                                >
+                                    {item.children.length > 0 ? (
+                                        collapsedIds.has(item.uId) ? <ChevronRight size={12}/> : <ChevronDown size={12}/>
+                                    ) : <div className="w-3"/>}
+                                </div>
+                                <div className="flex items-center min-w-0">
+                                    <span 
+                                        className={`truncate font-mono ${item.percentage > 20 ? 'text-red-600 font-bold' : 'text-gray-700'}`}
+                                        title={item.operation}
+                                    >
+                                        {item.operation}
+                                    </span>
+                                    {item.nodeId && <span className="ml-2 text-[10px] text-gray-400 font-mono shrink-0">#{item.nodeId}</span>}
                                 </div>
                             </div>
-                            <div className="col-span-2 text-right font-mono text-gray-600">{item.cost.toFixed(1)}</div>
-                            <div className="col-span-2 text-right font-mono text-gray-600">{item.actualRows !== undefined ? `${item.actualRows} / ${item.rows}` : item.rows}</div>
-                            <div className="col-span-3 flex items-center">
+                            
+                            {isAnalyze ? (
+                                <>
+                                    <div className="col-span-2 text-right font-mono text-gray-800 font-medium">
+                                        {item.actualTime?.toFixed(2)}ms
+                                    </div>
+                                    <div className="col-span-2 text-right font-mono">
+                                        <span className="text-gray-900 font-bold">{item.actualRows}</span>
+                                        <span className="text-gray-400 mx-1">/</span>
+                                        <span className="text-gray-500">{item.rows}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="col-span-2 text-right font-mono text-gray-600">{item.cost.toFixed(1)}</div>
+                                    <div className="col-span-2 text-right font-mono text-gray-600">{item.rows}</div>
+                                </>
+                            )}
+
+                            <div className="col-span-2 flex items-center">
                                 <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                                     <div className={`h-full ${item.percentage > 20 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${(item.cost / maxCost) * 100}%` }}></div>
                                 </div>
@@ -440,6 +605,7 @@ const PlanVisualizer: React.FC = () => {
   const [sql, setSql] = useState<string>('');
   const [rawPlanText, setRawPlanText] = useState<string>('');
   const [plan, setPlan] = useState<EnhancedNode | null>(null);
+  const [planType, setPlanType] = useState<PlanType>('Explain Only');
   const [planIssues, setPlanIssues] = useState<PlanIssue[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<EnhancedNode | null>(null);
@@ -450,6 +616,9 @@ const PlanVisualizer: React.FC = () => {
   const [highlightedIssueNodes, setHighlightedIssueNodes] = useState<string[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   
+  // Tree View State
+  const [treeExpandedIds, setTreeExpandedIds] = useState<Set<string>>(new Set());
+
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -458,6 +627,113 @@ const PlanVisualizer: React.FC = () => {
   const [maximizedPanel, setMaximizedPanel] = useState<PanelType | null>(null);
   // Removed unused setter setShowBottomPanel
   const [showBottomPanel] = useState(true);
+
+  // Initialize tree expansion state when plan loads
+  useEffect(() => {
+    if (plan) {
+        const allIds = new Set<string>();
+        let count = 0;
+        const traverse = (n: EnhancedNode) => {
+            count++;
+            allIds.add(n.uId);
+            n.children.forEach(traverse);
+        };
+        traverse(plan);
+        
+        // Rule: If plan is large (>10 nodes), only expand first 2 levels initially
+        if (count > 10) {
+            const initialExpanded = new Set<string>();
+            initialExpanded.add(plan.uId); // Level 0
+            plan.children.forEach(c => {
+                initialExpanded.add(c.uId); // Level 1
+                // c.children.forEach(gc => initialExpanded.add(gc.uId)); // Level 2 (optional)
+            });
+            setTreeExpandedIds(initialExpanded);
+        } else {
+            setTreeExpandedIds(allIds);
+        }
+    }
+  }, [plan]);
+
+  // Handle Tree Toggle
+  const handleToggleTree = (uId: string) => {
+      setTreeExpandedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(uId)) next.delete(uId);
+          else next.add(uId);
+          return next;
+      });
+  };
+
+  const handleExpandAll = () => {
+      if (!plan) return;
+      const allIds = new Set<string>();
+      const traverse = (n: EnhancedNode) => {
+          allIds.add(n.uId);
+          n.children.forEach(traverse);
+      };
+      traverse(plan);
+      setTreeExpandedIds(allIds);
+  };
+
+  const handleCollapseAll = () => {
+      if (!plan) return;
+      // Collapse all but root
+      const rootOnly = new Set<string>([plan.uId]);
+      setTreeExpandedIds(rootOnly);
+  };
+
+  const handleTableClick = (tableName: string | null) => {
+      if (tableName === highlightedTable) {
+          setHighlightedTable(null);
+          return;
+      }
+      setHighlightedTable(tableName);
+
+      // Auto-expand logic for Tree View
+      if (tableName && plan && viewMode === 'tree') {
+          const newExpanded = new Set(treeExpandedIds);
+          let found = false;
+          
+          const findAndExpand = (n: EnhancedNode, path: string[]): boolean => {
+              const currentPath = [...path, n.uId];
+              const match = n.operation.includes(tableName);
+              let childMatch = false;
+              
+              n.children.forEach(c => {
+                  if (findAndExpand(c, currentPath)) childMatch = true;
+              });
+
+              if (match || childMatch) {
+                  // Add self and all parents to expanded set
+                  currentPath.forEach(id => newExpanded.add(id));
+                  found = true;
+                  return true;
+              }
+              return false;
+          };
+
+          findAndExpand(plan, []);
+          
+          if (found) {
+              setTreeExpandedIds(newExpanded);
+          }
+      }
+  };
+
+  // Auto-scroll to highlighted issue
+  useEffect(() => {
+    if (highlightedIssueNodes.length > 0) {
+        // Small delay to ensure render
+        setTimeout(() => {
+            const targetId = highlightedIssueNodes[0];
+            const element = document.getElementById(`plan-node-${targetId}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
+    }
+  }, [highlightedIssueNodes, viewMode]);
 
   const activeKnowledgeKey = useMemo(() => {
     if (!selectedNode) return null;
@@ -508,52 +784,78 @@ const PlanVisualizer: React.FC = () => {
   }, [plan]);
 
   // Parsing Logic (Tabular & Text)
-  const parseGaussDBPlan = (text: string): EnhancedNode | null => {
+  const parseGaussDBPlan = (text: string): { root: EnhancedNode | null, type: PlanType } => {
       const isTabular = text.includes('|') && (text.includes('operation') || text.match(/^\s*\d+\s*\|/m));
-      return isTabular ? parseTabularFormat(text) : parseTextFormat(text);
+      if (isTabular) {
+          const root = parseTabularFormat(text);
+          // Tabular in GaussDB is typically "Explain Performance" if it has A-time/A-rows
+          return { root, type: 'Explain Performance' };
+      } else {
+          return parseTextFormat(text);
+      }
   };
 
-  const parseTextFormat = (text: string): EnhancedNode | null => {
+  const parseTextFormat = (text: string): { root: EnhancedNode | null, type: PlanType } => {
       const lines = text.split('\n').filter(l => l.trim() !== '');
       const nodeStack: { node: EnhancedNode; indent: number }[] = [];
       let root: EnhancedNode | null = null;
       let uidCounter = 0;
+      let detectedType: PlanType = 'Explain Only';
+      
       const costRegex = /\(cost=([\d\.]+)\.\.([\d\.]+) rows=(\d+) width=(\d+)\)/;
+      // Regex for Analyze output e.g. (actual time=0.012..0.012 rows=1 loops=1)
+      const analyzeRegex = /\(actual time=([\d\.]+)\.\.([\d\.]+) rows=(\d+) loops=(\d+)\)/;
+
       const findParent = (indent: number) => {
           for (let i = nodeStack.length - 1; i >= 0; i--) { if (nodeStack[i].indent < indent) return nodeStack[i].node; }
           return null;
       };
+      
       lines.forEach((line) => {
           const cleanLine = line.replace(/^[\s\|]*/, ''); 
           const indentMatch = line.match(/^[\s\|]*/);
           let indent = indentMatch ? indentMatch[0].length : 0;
           if (line.includes('->')) indent = line.indexOf('->');
           else if (line.trim().startsWith('CTE')) indent = line.indexOf('CTE');
+          
           const costMatch = line.match(costRegex);
+          const analyzeMatch = line.match(analyzeRegex);
+          
+          if (analyzeMatch) detectedType = 'Explain Analyze';
+
           let operation = cleanLine.split('(')[0].trim();
           if (operation.startsWith('->')) operation = operation.substring(2).trim();
           let isCteDef = false, isCteScan = false, cteName = '';
           if (operation.startsWith('CTE Scan on')) { isCteScan = true; cteName = operation.replace('CTE Scan on', '').split(' ')[0].trim(); } 
           else if (operation.startsWith('CTE') && !operation.startsWith('CTE Scan')) { isCteDef = true; cteName = operation.replace('CTE', '').trim(); }
+          
           const newNode: EnhancedNode = {
               id: `node_${uidCounter++}`, uId: `uid_${uidCounter}`, operation,
-              cost: costMatch ? parseFloat(costMatch[2]) : 0, rows: costMatch ? parseInt(costMatch[3]) : 0, width: costMatch ? parseInt(costMatch[4]) : 0,
+              cost: costMatch ? parseFloat(costMatch[2]) : 0, 
+              rows: costMatch ? parseInt(costMatch[3]) : 0, 
+              width: costMatch ? parseInt(costMatch[4]) : 0,
               children: [], totalCost: costMatch ? parseFloat(costMatch[2]) : 0, selfCost: 0, percentage: 0, details: line.trim(),
-              isCteDef, isCteScan, cteName
+              isCteDef, isCteScan, cteName,
+              actualTime: analyzeMatch ? parseFloat(analyzeMatch[2]) : undefined,
+              actualRows: analyzeMatch ? parseInt(analyzeMatch[3]) : undefined,
+              loops: analyzeMatch ? parseInt(analyzeMatch[4]) : undefined
           };
+
           if (nodeStack.length === 0) { root = newNode; nodeStack.push({ node: newNode, indent: -1 }); } 
           else {
               const parent = findParent(indent);
               if (parent) { parent.children.push(newNode); nodeStack.push({ node: newNode, indent }); } 
               else {
-                  if (!costMatch && nodeStack.length > 0) { nodeStack[nodeStack.length - 1].node.details += '\n' + line.trim(); } 
+                  if (!costMatch && !analyzeMatch && nodeStack.length > 0) { 
+                      nodeStack[nodeStack.length - 1].node.details += '\n' + line.trim(); 
+                  } 
                   else if (root) { root.children.push(newNode); nodeStack.push({node: newNode, indent}); }
               }
           }
       });
       // Fixed: Cast root to EnhancedNode to access totalCost
       if(root) calcStats(root, (root as EnhancedNode).totalCost);
-      return root;
+      return { root, type: detectedType };
   };
 
   const parseTabularFormat = (text: string): EnhancedNode | null => {
@@ -583,12 +885,14 @@ const PlanVisualizer: React.FC = () => {
           if (cols.length < 2) return;
           const id = cols[0].trim();
           const opRaw = cols[1]; 
+          // Tabular columns: id | operation | A-time | A-rows | E-rows | E-costs
           const aTime = cols.length > 2 ? parseFloat(cols[2].trim()) : undefined;
           const aRows = cols.length > 3 ? parseInt(cols[3].trim()) : undefined;
           const eRows = cols.length > 4 ? parseInt(cols[4].trim()) : 0;
           const lastCol = cols[cols.length - 1].trim();
           const costMatch = lastCol.match(/([\d\.]+)\.\.([\d\.]+)/);
-          const totalCost = costMatch ? parseFloat(costMatch[2]) : 0;
+          const totalCost = costMatch ? parseFloat(costMatch[2]) : (cols.length > 5 ? parseFloat(cols[5].trim()) : 0);
+          
           let indent = 0;
           const arrowIdx = opRaw.indexOf('->');
           if (arrowIdx !== -1) { indent = arrowIdx; } else { indent = opRaw.search(/\S/); }
@@ -628,10 +932,11 @@ const PlanVisualizer: React.FC = () => {
       setPlanIssues([]);
       setHighlightedIssueNodes([]);
       setTimeout(() => {
-          const parsed = parseGaussDBPlan(rawPlanText);
-          setPlan(parsed);
-          if (parsed) {
-              const issues = analyzePlan(parsed, t);
+          const { root, type } = parseGaussDBPlan(rawPlanText);
+          setPlan(root);
+          setPlanType(type);
+          if (root) {
+              const issues = analyzePlan(root, t);
               setPlanIssues(issues);
           }
           setLoading(false);
@@ -719,6 +1024,9 @@ const PlanVisualizer: React.FC = () => {
                             </div>
                             {viewMode === 'tree' && (
                                 <div className="flex items-center bg-gray-200 rounded p-0.5">
+                                    <button onClick={handleExpandAll} className="p-0.5 text-gray-600 hover:bg-white rounded" title="Expand All"><ChevronsDown size={12}/></button>
+                                    <button onClick={handleCollapseAll} className="p-0.5 text-gray-600 hover:bg-white rounded" title="Collapse All"><ChevronsUp size={12}/></button>
+                                    <div className="w-px h-3 bg-gray-300 mx-1"></div>
                                     <button onClick={handleZoomOut} className="p-0.5 text-gray-600 hover:bg-white rounded"><ZoomOut size={12}/></button>
                                     <span className="text-[10px] w-8 text-center font-mono text-gray-600">{Math.round(zoom * 100)}%</span>
                                     <button onClick={handleZoomIn} className="p-0.5 text-gray-600 hover:bg-white rounded"><ZoomIn size={12}/></button>
@@ -730,6 +1038,15 @@ const PlanVisualizer: React.FC = () => {
                             <button onClick={() => setShowKnowledgeBase(!showKnowledgeBase)} className={`flex items-center px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${showKnowledgeBase ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}><BookOpen size={12} className="mr-1.5"/> Knowledge</button>
                         </div>
                         <div className="flex items-center space-x-2">
+                             {plan && planType && (
+                                <span className={`mr-2 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    planType === 'Explain Only' 
+                                    ? 'bg-gray-100 text-gray-600 border-gray-200' 
+                                    : 'bg-green-100 text-green-700 border-green-200'
+                                }`}>
+                                    {planType}
+                                </span>
+                            )}
                             {plan && <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 font-medium mr-2">{t('vis.totalCost')}: {plan.cost.toLocaleString()}</span>}
                             <button onClick={() => toggleMaximize('visual')} className="text-gray-400 hover:text-blue-600">{maximizedPanel === 'visual' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
                         </div>
@@ -741,10 +1058,22 @@ const PlanVisualizer: React.FC = () => {
                             ) : plan ? (
                                 viewMode === 'tree' ? (
                                     <div ref={contentRef} className="flex justify-center items-start min-w-max transition-transform duration-200 origin-top" style={{ transform: `scale(${zoom})` }}>
-                                        <TreeNode node={plan} maxCost={plan.totalCost} selectedNode={selectedNode} onSelect={setSelectedNode} hoveredCte={hoveredCte} onHoverCte={setHoveredCte} highlightedTable={highlightedTable} highlightedIssueNodes={highlightedIssueNodes} />
+                                        <TreeNode 
+                                            node={plan} 
+                                            maxCost={plan.totalCost} 
+                                            selectedNode={selectedNode} 
+                                            onSelect={setSelectedNode} 
+                                            hoveredCte={hoveredCte} 
+                                            onHoverCte={setHoveredCte} 
+                                            highlightedTable={highlightedTable} 
+                                            highlightedIssueNodes={highlightedIssueNodes}
+                                            expandedIds={treeExpandedIds}
+                                            onToggle={handleToggleTree}
+                                            planType={planType}
+                                        />
                                     </div>
                                 ) : (
-                                    <div className="w-full max-w-4xl mx-auto">
+                                    <div className="w-full">
                                         <CostFlowView 
                                             node={plan} 
                                             maxCost={plan.totalCost} 
@@ -753,7 +1082,8 @@ const PlanVisualizer: React.FC = () => {
                                             hoveredCte={hoveredCte}
                                             onHoverCte={setHoveredCte}
                                             highlightedTable={highlightedTable} 
-                                            highlightedIssueNodes={highlightedIssueNodes} 
+                                            highlightedIssueNodes={highlightedIssueNodes}
+                                            planType={planType} 
                                         />
                                     </div>
                                 )
@@ -766,7 +1096,7 @@ const PlanVisualizer: React.FC = () => {
                                 <div className="sticky top-0 bg-white border-b border-gray-100 px-3 py-2 flex items-center text-xs font-semibold text-gray-600"><Table size={12} className="mr-1.5"/> Tables ({extractedTables.length})</div>
                                 <div className="py-1">
                                     {extractedTables.map(tableName => (
-                                        <div key={tableName} onClick={() => setHighlightedTable(highlightedTable === tableName ? null : tableName)} className={`px-3 py-1.5 text-xs cursor-pointer flex items-center justify-between group transition-colors ${highlightedTable === tableName ? 'bg-yellow-100 text-yellow-800' : 'hover:bg-gray-50 text-gray-600'}`}>
+                                        <div key={tableName} onClick={() => handleTableClick(tableName)} className={`px-3 py-1.5 text-xs cursor-pointer flex items-center justify-between group transition-colors ${highlightedTable === tableName ? 'bg-yellow-100 text-yellow-800' : 'hover:bg-gray-50 text-gray-600'}`}>
                                             <span className="truncate" title={tableName}>{tableName}</span>
                                             {highlightedTable === tableName && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>}
                                         </div>
