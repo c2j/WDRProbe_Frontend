@@ -11,7 +11,7 @@ import {
   BookOpen, ThumbsUp, ThumbsDown, HardDrive, XOctagon, 
   FunctionSquare, ListOrdered, Sigma, CheckCircle, Info,
   Maximize, Minimize, ChevronsDown, ChevronsUp,
-  Clock, Activity
+  Clock, Activity, AlertTriangle, Lightbulb
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 
@@ -37,6 +37,7 @@ interface PlanIssue {
     ruleId: string;
     title: string;
     severity: 'High' | 'Medium' | 'Low';
+    type: 'Risk' | 'Suggestion';
     description: string;
     suggestion: string;
     nodeUIds: string[];
@@ -103,24 +104,26 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
     const ruleHits: Record<string, string[]> = {};
     const initHits = (id: string) => { if (!ruleHits[id]) ruleHits[id] = []; };
     
-    // Rule 001: High Cost (Root check)
+    // Rule 001: High Cost (Root check) - Risk
     if (root.totalCost > 1000) { 
         issues.push({
             ruleId: 'Gauss-XN-001',
             title: t('vis.rule.001.title'),
             severity: 'High',
+            type: 'Risk',
             description: t('vis.rule.001.desc', { cost: root.totalCost.toFixed(0) }),
             suggestion: t('vis.rule.001.sugg'),
             nodeUIds: [root.uId]
         });
     }
 
-    // Rule 006: Long Execution Time (Root check)
+    // Rule 006: Long Execution Time (Root check) - Risk
     if (root.actualTime !== undefined && root.actualTime > 3000) {
         issues.push({
             ruleId: 'Gauss-XN-006',
             title: t('vis.rule.006.title'),
             severity: 'High',
+            type: 'Risk',
             description: t('vis.rule.006.desc', { time: root.actualTime.toFixed(2) }),
             suggestion: t('vis.rule.006.sugg'),
             nodeUIds: [root.uId]
@@ -131,17 +134,17 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
         const op = node.operation.toLowerCase();
         const details = (node.details || '').toLowerCase();
 
-        // 002: Seq Scan > 10000 rows
+        // 002: Seq Scan > 10000 rows - Suggestion
         if (op.includes('seq scan') && node.rows > 10000 && node.cost > 100) {
             initHits('Gauss-XN-002'); ruleHits['Gauss-XN-002'].push(node.uId);
         }
 
-        // 003: SubPlan
+        // 003: SubPlan - Suggestion
         if (op.includes('subplan') || op.includes('subquery scan')) {
              initHits('Gauss-XN-003'); ruleHits['Gauss-XN-003'].push(node.uId);
         }
 
-        // 004: Cartesian (Nested Loop heuristic)
+        // 004: Cartesian (Nested Loop heuristic) - Risk
         if (op.includes('nested loop')) {
              const hasIndexChild = node.children.some(c => c.operation.toLowerCase().includes('index scan'));
              if (!hasIndexChild && !details.includes('join filter') && !details.includes('index cond')) {
@@ -149,7 +152,7 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
              }
         }
 
-        // 005: Partition Iterator
+        // 005: Partition Iterator - Risk
         if (op.includes('partition iterator')) {
             const iterMatch = details.match(/iterations:?\s*(\d+|part)/i);
             if (iterMatch) {
@@ -161,28 +164,27 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
             }
         }
 
-        // 007: Bitmap
+        // 007: Bitmap - Suggestion
         if (op.includes('bitmap heap scan')) {
             initHits('Gauss-XN-007'); ruleHits['Gauss-XN-007'].push(node.uId);
         }
 
-        // 008: Disk Spill
+        // 008: Disk Spill - Risk
         if (details.includes('disk') || details.includes('spill') || details.includes('external merge')) {
             initHits('Gauss-XN-008'); ruleHits['Gauss-XN-008'].push(node.uId);
         }
 
-        // 009: Index Scan Filter
+        // 009: Index Scan Filter - Suggestion
         if (op.includes('index scan') && details.includes('filter:')) {
-            // Check if filter contains columns from index? (Simplified: Just warn about Filter after Index)
             initHits('Gauss-XN-009'); ruleHits['Gauss-XN-009'].push(node.uId);
         }
 
-        // 011: User Function
+        // 011: User Function - Risk
         if (details.includes('func') || details.includes('fnc')) {
             initHits('Gauss-XN-011'); ruleHits['Gauss-XN-011'].push(node.uId);
         }
 
-        // 012: Update Set Subquery (Heuristic: Multiple identical subplans)
+        // 012: Update Set Subquery - Suggestion
         if (node.children.length >= 3) {
              const subplans = node.children.filter(c => c.operation.toLowerCase().includes('subquery') || c.operation.toLowerCase().includes('initplan'));
              if (subplans.length >= 3) {
@@ -190,7 +192,7 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
              }
         }
 
-        // 013: Rownum
+        // 013: Rownum - Risk
         if (op.includes('rownum') && node.rows > 10000) {
             initHits('Gauss-XN-013'); ruleHits['Gauss-XN-013'].push(node.uId);
         }
@@ -200,12 +202,13 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
 
     traverseCheck(root);
 
-    const addRule = (id: string, ruleKeyPart: string, severity: 'High'|'Medium') => {
+    const addRule = (id: string, ruleKeyPart: string, severity: 'High'|'Medium', type: 'Risk'|'Suggestion') => {
         if (ruleHits[id] && ruleHits[id].length > 0) {
             issues.push({ 
                 ruleId: id, 
                 title: t(`vis.rule.${ruleKeyPart}.title`), 
-                severity, 
+                severity,
+                type, 
                 description: `${t(`vis.rule.${ruleKeyPart}.desc`)} (Count: ${ruleHits[id].length})`, 
                 suggestion: t(`vis.rule.${ruleKeyPart}.sugg`), 
                 nodeUIds: ruleHits[id] 
@@ -213,16 +216,16 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
         }
     };
 
-    addRule('Gauss-XN-002', '002', 'Medium');
-    addRule('Gauss-XN-003', '003', 'Medium');
-    addRule('Gauss-XN-004', '004', 'High');
-    addRule('Gauss-XN-005', '005', 'High');
-    addRule('Gauss-XN-007', '007', 'Medium');
-    addRule('Gauss-XN-008', '008', 'High');
-    addRule('Gauss-XN-009', '009', 'High');
-    addRule('Gauss-XN-011', '011', 'High');
-    addRule('Gauss-XN-012', '012', 'High');
-    addRule('Gauss-XN-013', '013', 'High');
+    addRule('Gauss-XN-002', '002', 'Medium', 'Suggestion');
+    addRule('Gauss-XN-003', '003', 'Medium', 'Suggestion');
+    addRule('Gauss-XN-004', '004', 'High', 'Risk');
+    addRule('Gauss-XN-005', '005', 'High', 'Risk');
+    addRule('Gauss-XN-007', '007', 'Medium', 'Suggestion');
+    addRule('Gauss-XN-008', '008', 'High', 'Risk');
+    addRule('Gauss-XN-009', '009', 'High', 'Suggestion');
+    addRule('Gauss-XN-011', '011', 'High', 'Risk');
+    addRule('Gauss-XN-012', '012', 'High', 'Suggestion');
+    addRule('Gauss-XN-013', '013', 'High', 'Risk');
 
     return issues;
 };
@@ -622,6 +625,7 @@ const PlanVisualizer: React.FC = () => {
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const issuesPanelRef = useRef<HTMLDivElement>(null);
   
   const [visiblePanels, setVisiblePanels] = useState<Record<PanelType, boolean>>({ sql: false, text: true, visual: true });
   const [maximizedPanel, setMaximizedPanel] = useState<PanelType | null>(null);
@@ -721,6 +725,15 @@ const PlanVisualizer: React.FC = () => {
       }
   };
 
+  const scrollToIssues = () => {
+      if (issuesPanelRef.current) {
+          issuesPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Optionally highlight the issues panel slightly
+          issuesPanelRef.current.classList.add('ring-2', 'ring-blue-400');
+          setTimeout(() => issuesPanelRef.current?.classList.remove('ring-2', 'ring-blue-400'), 1000);
+      }
+  };
+
   // Auto-scroll to highlighted issue
   useEffect(() => {
     if (highlightedIssueNodes.length > 0) {
@@ -743,6 +756,12 @@ const PlanVisualizer: React.FC = () => {
     const match = KNOWLEDGE_KEYS.find(k => k.keywords.some(kw => op.includes(kw)));
     return match ? match.key : null;
   }, [selectedNode]);
+
+  const maxSeverity = useMemo(() => {
+      if (planIssues.some(i => i.severity === 'High')) return 'High';
+      if (planIssues.some(i => i.severity === 'Medium')) return 'Medium';
+      return 'Low';
+  }, [planIssues]);
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));
@@ -1038,6 +1057,23 @@ const PlanVisualizer: React.FC = () => {
                             <button onClick={() => setShowKnowledgeBase(!showKnowledgeBase)} className={`flex items-center px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${showKnowledgeBase ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}`}><BookOpen size={12} className="mr-1.5"/> Knowledge</button>
                         </div>
                         <div className="flex items-center space-x-2">
+                             {planIssues.length > 0 && (
+                                <button 
+                                    onClick={scrollToIssues}
+                                    className={`flex items-center space-x-1 px-2 py-0.5 rounded border text-xs font-bold mr-2 hover:bg-opacity-80 transition-colors animate-pulse
+                                        ${maxSeverity === 'High' 
+                                            ? 'bg-red-100 text-red-700 border-red-200' 
+                                            : maxSeverity === 'Medium' 
+                                                ? 'bg-orange-100 text-orange-700 border-orange-200'
+                                                : 'bg-blue-100 text-blue-700 border-blue-200'
+                                        }
+                                    `}
+                                    title={`${planIssues.length} issues found. Click to view.`}
+                                >
+                                    <AlertTriangle size={12} />
+                                    <span>{planIssues.length}</span>
+                                </button>
+                             )}
                              {plan && planType && (
                                 <span className={`mr-2 px-2 py-0.5 rounded text-[10px] font-bold border ${
                                     planType === 'Explain Only' 
@@ -1128,33 +1164,43 @@ const PlanVisualizer: React.FC = () => {
 
         {/* Bottom Panel: Optimization Suggestions */}
         {showBottomPanel && !isFullscreen && (
-            <div className="h-48 flex gap-4 min-h-[150px] shrink-0 animate-in slide-in-from-bottom-5 fade-in duration-300">
+            <div ref={issuesPanelRef} className="h-48 flex gap-4 min-h-[150px] shrink-0 animate-in slide-in-from-bottom-5 fade-in duration-300">
                 <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col">
                     <div className="bg-orange-50 px-4 py-2 border-b border-orange-100 shrink-0 flex justify-between">
-                        <span className="text-xs font-semibold text-orange-700 flex items-center"><Zap size={14} className="mr-2"/> {t('vis.opt.suggestions')}</span>
+                        <span className="text-xs font-semibold text-orange-700 flex items-center"><Zap size={14} className="mr-2"/> {t('vis.opt.suggestions')} & Risks</span>
                         {planIssues.length > 0 && <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 rounded-full">{planIssues.length} Issues Found</span>}
                     </div>
                     <div className="p-4 overflow-y-auto flex-1">
                         {planIssues.length > 0 ? (
                             <div className="space-y-3">
-                                {planIssues.map((issue, idx) => (
-                                    <div 
-                                        key={idx} 
-                                        onClick={() => setHighlightedIssueNodes(issue.nodeUIds)}
-                                        className="flex items-start p-3 bg-red-50 rounded-md border border-red-100 cursor-pointer hover:bg-red-100 transition-colors"
-                                    >
-                                        <AlertCircle size={16} className={`mr-2 mt-0.5 flex-shrink-0 ${issue.severity === 'High' ? 'text-red-600' : 'text-orange-500'}`}/>
-                                        <div>
-                                            <div className="flex items-center space-x-2">
-                                                <span className="text-sm font-bold text-gray-800">{issue.title}</span>
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded text-white font-medium ${issue.severity === 'High' ? 'bg-red-500' : 'bg-orange-400'}`}>{issue.severity}</span>
-                                                <span className="text-[10px] text-gray-400 font-mono">({issue.ruleId})</span>
+                                {planIssues.map((issue, idx) => {
+                                    const isRisk = issue.type === 'Risk';
+                                    const Icon = isRisk ? AlertTriangle : Lightbulb;
+                                    const borderColor = isRisk ? 'border-red-100' : 'border-blue-100';
+                                    const bgColor = isRisk ? 'bg-red-50' : 'bg-blue-50';
+                                    const hoverBg = isRisk ? 'hover:bg-red-100' : 'hover:bg-blue-100';
+                                    const iconColor = isRisk ? (issue.severity === 'High' ? 'text-red-600' : 'text-orange-500') : 'text-blue-600';
+                                    const badgeColor = isRisk ? (issue.severity === 'High' ? 'bg-red-500' : 'bg-orange-400') : 'bg-blue-500';
+
+                                    return (
+                                        <div 
+                                            key={idx} 
+                                            onClick={() => setHighlightedIssueNodes(issue.nodeUIds)}
+                                            className={`flex items-start p-3 rounded-md border cursor-pointer transition-colors ${bgColor} ${borderColor} ${hoverBg}`}
+                                        >
+                                            <Icon size={16} className={`mr-2 mt-0.5 flex-shrink-0 ${iconColor}`}/>
+                                            <div>
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm font-bold text-gray-800">{issue.title}</span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded text-white font-medium ${badgeColor}`}>{issue.severity}</span>
+                                                    <span className="text-[10px] text-gray-400 font-mono">({issue.ruleId})</span>
+                                                </div>
+                                                <p className="text-xs text-gray-700 mt-1">{issue.description}</p>
+                                                <p className="text-xs text-blue-600 mt-1 font-medium flex items-center"><Info size={12} className="mr-1"/> Suggestion: {issue.suggestion}</p>
                                             </div>
-                                            <p className="text-xs text-gray-700 mt-1">{issue.description}</p>
-                                            <p className="text-xs text-blue-600 mt-1 font-medium flex items-center"><Info size={12} className="mr-1"/> Suggestion: {issue.suggestion}</p>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full text-gray-400">
