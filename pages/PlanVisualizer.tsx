@@ -1,11 +1,10 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { ApiService } from '../services/apiService';
-import { ExecutionPlanNode, WdrHotSql } from '../types';
+import { ExecutionPlanNode } from '../types';
 import { 
   Play, AlertCircle, Database, Zap, FileCode, MousePointer2, 
-  GitBranch, AlignLeft, ChevronDown, ChevronRight, 
-  Maximize2, Minimize2, X, Eye, EyeOff, PanelBottom,
+  GitBranch, AlignLeft, ChevronDown, 
+  Maximize2, Minimize2, X, Eye, EyeOff,
   BarChart2, Link as LinkIcon, RefreshCw, Layers,
   ZoomIn, ZoomOut, RotateCcw, Search, Table, Scan,
   BookOpen, ThumbsUp, ThumbsDown, HardDrive, XOctagon, 
@@ -379,7 +378,7 @@ const TreeNode: React.FC<NodeViewProps> = ({
 };
 
 const CostFlowView: React.FC<NodeViewProps> = ({ 
-    node, maxCost, selectedNode, onSelect, hoveredCte, onHoverCte, highlightedTable, highlightedIssueNodes
+    node, maxCost, selectedNode, onSelect, highlightedTable, highlightedIssueNodes
 }) => {
     const flatten = (n: EnhancedNode, depth: number = 0): Array<{ node: EnhancedNode; depth: number }> => {
         let res = [{ node: n, depth }];
@@ -442,7 +441,6 @@ const PlanVisualizer: React.FC = () => {
   const [rawPlanText, setRawPlanText] = useState<string>('');
   const [plan, setPlan] = useState<EnhancedNode | null>(null);
   const [planIssues, setPlanIssues] = useState<PlanIssue[]>([]);
-  const [hotSqls, setHotSqls] = useState<WdrHotSql[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<EnhancedNode | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('tree');
@@ -458,9 +456,8 @@ const PlanVisualizer: React.FC = () => {
   
   const [visiblePanels, setVisiblePanels] = useState<Record<PanelType, boolean>>({ sql: false, text: true, visual: true });
   const [maximizedPanel, setMaximizedPanel] = useState<PanelType | null>(null);
-  const [showBottomPanel, setShowBottomPanel] = useState(true);
-
-  useEffect(() => { ApiService.getWdrHotSqls().then(setHotSqls); }, []);
+  // Removed unused setter setShowBottomPanel
+  const [showBottomPanel] = useState(true);
 
   const activeKnowledgeKey = useMemo(() => {
     if (!selectedNode) return null;
@@ -554,7 +551,8 @@ const PlanVisualizer: React.FC = () => {
               }
           }
       });
-      if(root) calcStats(root, root.totalCost);
+      // Fixed: Cast root to EnhancedNode to access totalCost
+      if(root) calcStats(root, (root as EnhancedNode).totalCost);
       return root;
   };
 
@@ -612,7 +610,8 @@ const PlanVisualizer: React.FC = () => {
               else { if(root) root.children.push(newNode); nodeStack.push({node: newNode, indent}); }
           }
       });
-      if(root) calcStats(root, root.totalCost);
+      // Fixed: Cast root to EnhancedNode to access totalCost
+      if(root) calcStats(root, (root as EnhancedNode).totalCost);
       return root;
   };
 
@@ -746,7 +745,16 @@ const PlanVisualizer: React.FC = () => {
                                     </div>
                                 ) : (
                                     <div className="w-full max-w-4xl mx-auto">
-                                        <CostFlowView node={plan} maxCost={plan.totalCost} selectedNode={selectedNode} onSelect={setSelectedNode} hoveredCte={hoveredCte} onHoverCte={setHoveredCte} highlightedTable={highlightedTable} highlightedIssueNodes={highlightedIssueNodes} />
+                                        <CostFlowView 
+                                            node={plan} 
+                                            maxCost={plan.totalCost} 
+                                            selectedNode={selectedNode} 
+                                            onSelect={setSelectedNode} 
+                                            hoveredCte={hoveredCte}
+                                            onHoverCte={setHoveredCte}
+                                            highlightedTable={highlightedTable} 
+                                            highlightedIssueNodes={highlightedIssueNodes} 
+                                        />
                                     </div>
                                 )
                             ) : (
