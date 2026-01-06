@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { EnhancedNode, PlanIssue, PlanType } from '../types';
+import { EnhancedNode, PlanIssue, PlanType, VisHistoryItem } from '../types';
 import { 
   Play, AlertCircle, Database, Zap, FileCode, MousePointer2, 
   GitBranch, AlignLeft, ChevronDown, ChevronRight, ChevronUp,
@@ -10,7 +10,7 @@ import {
   BookOpen, ThumbsUp, ThumbsDown, HardDrive, XOctagon, 
   FunctionSquare, ListOrdered, Sigma, CheckCircle, Info,
   Maximize, Minimize, ChevronsDown, ChevronsUp,
-  Lightbulb, AlertTriangle
+  Lightbulb, AlertTriangle, History, Trash2, Clock
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import { usePlanContext } from '../context/PlanContext';
@@ -203,6 +203,80 @@ const analyzePlan = (root: EnhancedNode, t: (key: string, params?: any) => strin
 };
 
 // --- Components ---
+
+const HistorySidebar: React.FC<{ isOpen: boolean; onClose: () => void; onLoad: (item: VisHistoryItem) => void }> = ({ isOpen, onClose, onLoad }) => {
+    const { t } = useI18n();
+    const [history, setHistory] = useState<VisHistoryItem[]>([]);
+
+    useEffect(() => {
+        if (isOpen) {
+            const saved = localStorage.getItem('wdr_vis_history');
+            if (saved) {
+                setHistory(JSON.parse(saved));
+            }
+        }
+    }, [isOpen]);
+
+    const handleDelete = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const newHistory = history.filter(h => h.id !== id);
+        setHistory(newHistory);
+        localStorage.setItem('wdr_vis_history', JSON.stringify(newHistory));
+    };
+
+    const handleClearAll = () => {
+        setHistory([]);
+        localStorage.removeItem('wdr_vis_history');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 animate-in slide-in-from-right">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                <h3 className="font-bold text-gray-700 flex items-center">
+                    <History size={18} className="mr-2 text-blue-600"/>
+                    History
+                </h3>
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                    <X size={18} />
+                </button>
+            </div>
+            <div className="p-2 border-b border-gray-100 flex justify-end">
+                <button onClick={handleClearAll} className="text-xs text-red-500 hover:text-red-700 flex items-center px-2 py-1">
+                    <Trash2 size={12} className="mr-1"/> Clear All
+                </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                {history.length === 0 ? (
+                    <div className="text-center text-gray-400 text-sm py-8">No history found.</div>
+                ) : (
+                    history.map(item => (
+                        <div 
+                            key={item.id}
+                            onClick={() => { onLoad(item); onClose(); }}
+                            className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group"
+                        >
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="text-xs font-bold text-gray-700 truncate max-w-[180px]">{item.name}</span>
+                                <button onClick={(e) => handleDelete(item.id, e)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={14}/>
+                                </button>
+                            </div>
+                            <div className="flex items-center text-[10px] text-gray-400 mb-2">
+                                <Clock size={10} className="mr-1"/>
+                                {new Date(item.timestamp).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-gray-500 font-mono bg-gray-100 p-1.5 rounded truncate">
+                                {item.planText.substring(0, 50)}...
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
 
 const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey: string | null }> = ({ isOpen, onClose, activeKey }) => {
     const { t } = useI18n();
@@ -596,6 +670,9 @@ const PlanVisualizer: React.FC = () => {
   const [highlightedIssueNodes, setHighlightedIssueNodes] = useState<string[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   
+  // History State
+  const [showHistory, setShowHistory] = useState(false);
+  
   // Tree View State
   const [treeExpandedIds, setTreeExpandedIds] = useState<Set<string>>(new Set());
 
@@ -642,6 +719,38 @@ const PlanVisualizer: React.FC = () => {
           setVisiblePanels(prev => ({ ...prev, text: false, sql: false }));
       }
   }, []); // Only run once on mount
+
+  const saveToHistory = (s: string, p: string) => {
+      if (!p.trim()) return;
+      const historyKey = 'wdr_vis_history';
+      const existingStr = localStorage.getItem(historyKey);
+      let history: VisHistoryItem[] = existingStr ? JSON.parse(existingStr) : [];
+      
+      // Avoid dups if content is same as most recent
+      if (history.length > 0 && history[0].planText === p && history[0].sql === s) {
+          return;
+      }
+
+      const newItem: VisHistoryItem = {
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          name: `Analysis ${new Date().toLocaleTimeString()}`,
+          sql: s,
+          planText: p
+      };
+
+      history = [newItem, ...history].slice(0, 30); // Keep last 30
+      localStorage.setItem(historyKey, JSON.stringify(history));
+  };
+
+  const handleHistoryLoad = (item: VisHistoryItem) => {
+      setSql(item.sql);
+      setRawPlanText(item.planText);
+      // Trigger parse with slight delay to ensure state updates
+      setTimeout(() => {
+          handleParseText(true); // pass true to skip save
+      }, 50);
+  };
 
   // Handle Tree Toggle
   const handleToggleTree = (uId: string) => {
@@ -930,7 +1039,7 @@ const PlanVisualizer: React.FC = () => {
       n.percentage = total > 0 ? (n.totalCost / total) * 100 : 0;
   };
 
-  const handleParseText = () => {
+  const handleParseText = (skipSave = false) => {
       setLoading(true);
       setPlanIssues([]);
       setHighlightedIssueNodes([]);
@@ -941,6 +1050,7 @@ const PlanVisualizer: React.FC = () => {
           if (root) {
               const issues = analyzePlan(root, t);
               setPlanIssues(issues);
+              if (!skipSave) saveToHistory(sql, rawPlanText);
           }
           setLoading(false);
           setVisiblePanels({ ...visiblePanels, text: false, sql: false });
@@ -980,6 +1090,9 @@ const PlanVisualizer: React.FC = () => {
                  <button onClick={() => { setRawPlanText(`id | operation | A-time | A-rows | E-rows | E-costs\n 1 | -> Seq Scan on t1 | 3001 | 200000 | 200000 | 15000\n 2 | -> Nested Loop | 20 | 1 | 1 | 500\n 3 |    -> Index Scan | 10 | 1 | 1 | 50`); }} className="text-sm text-blue-600 hover:text-blue-800 font-medium px-2">Load Demo</button>
             </div>
             <div className="flex items-center space-x-3">
+                 <button onClick={() => setShowHistory(true)} className="p-1.5 rounded text-gray-500 hover:text-blue-600 hover:bg-gray-100 mr-2" title="History">
+                    <History size={18} />
+                 </button>
                  <div className="flex items-center space-x-2 text-[10px] text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 mr-2">
                     <span className="font-semibold text-gray-400 uppercase tracking-wider">Impact:</span>
                     <div className="flex items-center" title=">50% Cost"><span className="w-2 h-2 rounded-full bg-[#b91c1c] mr-1"></span>&gt;50%</div>
@@ -999,12 +1112,12 @@ const PlanVisualizer: React.FC = () => {
                  >
                     {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
                  </button>
-                 <button onClick={handleParseText} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm flex items-center shadow-sm"><Play size={14} className="mr-2"/> {t('vis.explain')}</button>
+                 <button onClick={() => handleParseText(false)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm flex items-center shadow-sm"><Play size={14} className="mr-2"/> {t('vis.explain')}</button>
             </div>
         </div>
 
         {/* Content */}
-        <div className="flex flex-1 gap-4 min-h-0">
+        <div className="flex flex-1 gap-4 min-h-0 relative">
             <div className={`${getPanelClasses('sql')} flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
                 <PanelHeader title={t('vis.sqlEditor')} icon={FileCode} subtitle={t('vis.syntax')} type="sql" />
                 <textarea className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none text-gray-700 bg-[#fbfbfb]" value={sql} onChange={(e) => setSql(e.target.value)} placeholder={t('vis.pastePlaceholder')}/>
@@ -1144,6 +1257,12 @@ const PlanVisualizer: React.FC = () => {
                  </div>
                  <KnowledgePanel isOpen={showKnowledgeBase} onClose={() => setShowKnowledgeBase(false)} activeKey={activeKnowledgeKey} />
             </div>
+            
+            <HistorySidebar 
+                isOpen={showHistory} 
+                onClose={() => setShowHistory(false)} 
+                onLoad={handleHistoryLoad} 
+            />
         </div>
 
         {/* Bottom Panel: Optimization Suggestions */}

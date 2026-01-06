@@ -11,28 +11,33 @@ import SqlAudit from './pages/SqlAudit';
 import AuditLog from './pages/AuditLog';
 import PlanVisualizer from './pages/PlanVisualizer';
 import PlanDiff from './pages/PlanDiff';
+import WDRReportAnalyze from './pages/WDRReportAnalyze';
 import { I18nProvider } from './context/I18nContext';
 import { PlanProvider } from './context/PlanContext';
+import { WDRProvider } from './context/WDRContext';
 
 const App: React.FC = () => {
   return (
     <I18nProvider>
       <PlanProvider>
-        <HashRouter>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/reports" element={<ReportManagement />} />
-              <Route path="/reports/:id" element={<ReportDetail />} />
-              <Route path="/comparison" element={<ComparisonAnalysis />} />
-              <Route path="/visualizer" element={<PlanVisualizer />} />
-              <Route path="/plandiff" element={<PlanDiff />} />
-              <Route path="/thresholds" element={<ThresholdConfig />} />
-              <Route path="/sqlaudit" element={<SqlAudit />} />
-              <Route path="/auditlog" element={<AuditLog />} />
-            </Routes>
-          </Layout>
-        </HashRouter>
+        <WDRProvider>
+          <HashRouter>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/wdr-analysis" element={<WDRReportAnalyze />} />
+                <Route path="/reports" element={<ReportManagement />} />
+                <Route path="/reports/:id" element={<ReportDetail />} />
+                <Route path="/comparison" element={<ComparisonAnalysis />} />
+                <Route path="/visualizer" element={<PlanVisualizer />} />
+                <Route path="/plandiff" element={<PlanDiff />} />
+                <Route path="/thresholds" element={<ThresholdConfig />} />
+                <Route path="/sqlaudit" element={<SqlAudit />} />
+                <Route path="/auditlog" element={<AuditLog />} />
+              </Routes>
+            </Layout>
+          </HashRouter>
+        </WDRProvider>
       </PlanProvider>
     </I18nProvider>
   );

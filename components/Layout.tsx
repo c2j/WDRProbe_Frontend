@@ -15,7 +15,8 @@ import {
   ChevronRight,
   GitBranch,
   Languages,
-  SplitSquareHorizontal
+  SplitSquareHorizontal,
+  FileSearch
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 
@@ -30,6 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const MENU_ITEMS = [
     { path: '/', labelKey: 'menu.dashboard', icon: LayoutDashboard },
+    { path: '/wdr-analysis', labelKey: 'menu.wdrAnalyze', icon: FileSearch },
     { path: '/reports', labelKey: 'menu.reports', icon: FileText },
     { path: '/comparison', labelKey: 'menu.comparison', icon: GitCompare },
     { path: '/visualizer', labelKey: 'menu.visualizer', icon: GitBranch },

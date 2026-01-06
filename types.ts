@@ -5,6 +5,9 @@ export interface WdrReport {
   generateTime: string;
   period: string;
   status: 'Success' | 'Failed' | 'Running';
+  version?: string;
+  cpu?: string;
+  memory?: string;
 }
 
 export interface WdrEfficiency {
@@ -20,7 +23,8 @@ export interface WdrBufferStat {
 
 export interface WdrObjectStat {
   schema: string;
-  name: string;
+  name: string; // Table name or Index name
+  tableName?: string; // For indexes, the parent table
   type: 'Table' | 'Index';
   seqScan?: number;
   idxScan?: number;
@@ -29,6 +33,63 @@ export interface WdrObjectStat {
   tupDel?: number;
   liveTup?: number;
   deadTup?: number;
+  // Index specific
+  idxTupRead?: number;
+  idxTupFetch?: number;
+}
+
+export interface WdrWaitEvent {
+  event: string;
+  waitClass: string;
+  waits: number;
+  totalWaitTime: number; // us or ms depending on report
+  avgWaitTime: number;
+  pctDBTime: number;
+}
+
+export interface WdrConfigSetting {
+  name: string;
+  value: string;
+}
+
+// Expanded Top SQL Interface
+export interface WdrTopSqlItem {
+  sqlId: string;
+  uniqueSqlId: number;
+  userName: string;
+  text: string;
+  
+  // Core Timings
+  totalTime: number; // us
+  calls: number;
+  avgTime: number; // us
+  cpuTime: number; // us
+  ioTime: number; // us (Data IO Time)
+  minTime?: number; // us
+  maxTime?: number; // us
+  
+  // Rows & Tuples
+  rows: number;
+  tuplesRead?: number;
+  tuplesAffected?: number;
+  
+  // IO Ops
+  physicalRead?: number;
+  logicalRead?: number;
+  
+  // Sort Stats
+  sortCount?: number;
+  sortTime?: number;
+  sortMemUsed?: number;
+  sortSpillCount?: number;
+  sortSpillSize?: number;
+  
+  // Hash Stats
+  hashCount?: number;
+  hashTime?: number;
+  hashMemUsed?: number;
+  hashSpillCount?: number;
+  hashSpillSize?: number;
 }
 
 export interface WdrReportDetail {
@@ -45,19 +106,10 @@ export interface WdrReportDetail {
     perTxn: number;
     perExec?: number;
   }[];
-  topSql: {
-    sqlId: string;
-    uniqueSqlId: number;
-    userName: string;
-    text: string;
-    totalTime: number; // us
-    calls: number;
-    avgTime: number; // us
-    cpuTime: number; // us
-    ioTime: number; // us
-    rows: number;
-  }[];
+  waitEvents: WdrWaitEvent[];
+  topSql: WdrTopSqlItem[];
   objectStats: WdrObjectStat[];
+  configs: WdrConfigSetting[];
 }
 
 export interface ThresholdConfig {
@@ -69,6 +121,16 @@ export interface ThresholdConfig {
   recommendRange: string;
   // Frontend helpers
   category?: string; 
+}
+
+export interface RiskIssue {
+    severity: 'High' | 'Medium' | 'Low';
+    title: string;
+    description: string;
+    category: 'SQL' | 'Object' | 'System';
+    relatedId?: string | number;
+    relatedType?: 'sql' | 'object' | 'system';
+    extra?: Record<string, string | number>;
 }
 
 export interface SqlAuditIssue {
@@ -251,4 +313,24 @@ export interface DiffNode {
     percentage: number;
     details: string;
     children: DiffNode[];
+}
+
+// --- History Types ---
+
+export interface VisHistoryItem {
+    id: string;
+    timestamp: number;
+    name: string;
+    sql: string;
+    planText: string;
+}
+
+export interface DiffHistoryItem {
+    id: string;
+    timestamp: number;
+    name: string;
+    mode: 'unified' | 'split';
+    left: string;
+    right: string;
+    unified: string;
 }

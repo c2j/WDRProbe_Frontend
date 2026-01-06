@@ -255,6 +255,10 @@ export const ApiService = {
         { metric: 'Executes (SQL)', perSec: 1, perTxn: 0, perExec: 1 },
         { metric: 'Transactions', perSec: 3, perTxn: 1, perExec: 0 },
       ],
+      waitEvents: [
+        { event: 'CPU', waitClass: 'CPU', waits: 0, totalWaitTime: 5443, avgWaitTime: 0, pctDBTime: 95.3 },
+        { event: 'db_file_sequential_read', waitClass: 'User I/O', waits: 100, totalWaitTime: 200, avgWaitTime: 2, pctDBTime: 3.5 },
+      ],
       topSql: [
         { sqlId: '159002238', uniqueSqlId: 159002238, userName: 'omm', text: 'select ?, ?, t.* from dbe', totalTime: 66077, calls: 3, avgTime: 22026, cpuTime: 66973, ioTime: 0, rows: 652 },
         { sqlId: '1291065786', uniqueSqlId: 1291065786, userName: 'omm', text: 'select ?, ?, t.* from dbe', totalTime: 60761, calls: 3, avgTime: 20254, cpuTime: 61576, ioTime: 0, rows: 958 },
@@ -265,6 +269,10 @@ export const ApiService = {
           { schema: 'public', name: 'bmsql_customer', type: 'Table', seqScan: 20, idxScan: 5000, tupIns: 0, tupUpd: 150, tupDel: 0, liveTup: 30000, deadTup: 20 },
           { schema: 'public', name: 'bmsql_stock', type: 'Table', seqScan: 5, idxScan: 12000, tupIns: 0, tupUpd: 2500, tupDel: 0, liveTup: 100000, deadTup: 1500 },
           { schema: 'public', name: 'bmsql_oorder_idx1', type: 'Index', idxScan: 8500 }
+      ],
+      configs: [
+        { name: 'work_mem', value: '64MB' },
+        { name: 'shared_buffers', value: '1GB' }
       ]
     };
   },

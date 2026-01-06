@@ -4,16 +4,92 @@ import {
   GitCompare, ArrowRight, ArrowDown, ArrowUp, AlertCircle, 
   CheckCircle, Minus, RotateCcw, ChevronDown, ChevronRight,
   Activity, Database, AlertTriangle, BarChart2, Columns, FileText, Split,
-  X, Maximize, Minimize
+  X, Maximize, Minimize, History, Trash2, Clock
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import { usePlanContext } from '../context/PlanContext';
-import { DiffNode } from '../types';
+import { DiffHistoryItem, DiffNode } from '../types';
 
 interface NodePair {
     left: DiffNode | null;
     right: DiffNode | null;
 }
+
+// --- Components ---
+
+const HistorySidebar: React.FC<{ isOpen: boolean; onClose: () => void; onLoad: (item: DiffHistoryItem) => void }> = ({ isOpen, onClose, onLoad }) => {
+    const { t } = useI18n();
+    const [history, setHistory] = useState<DiffHistoryItem[]>([]);
+
+    useEffect(() => {
+        if (isOpen) {
+            const saved = localStorage.getItem('wdr_diff_history');
+            if (saved) {
+                setHistory(JSON.parse(saved));
+            }
+        }
+    }, [isOpen]);
+
+    const handleDelete = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const newHistory = history.filter(h => h.id !== id);
+        setHistory(newHistory);
+        localStorage.setItem('wdr_diff_history', JSON.stringify(newHistory));
+    };
+
+    const handleClearAll = () => {
+        setHistory([]);
+        localStorage.removeItem('wdr_diff_history');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl z-50 flex flex-col transform transition-transform duration-300 animate-in slide-in-from-right">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                <h3 className="font-bold text-gray-700 flex items-center">
+                    <History size={18} className="mr-2 text-blue-600"/>
+                    History
+                </h3>
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                    <X size={18} />
+                </button>
+            </div>
+            <div className="p-2 border-b border-gray-100 flex justify-end">
+                <button onClick={handleClearAll} className="text-xs text-red-500 hover:text-red-700 flex items-center px-2 py-1">
+                    <Trash2 size={12} className="mr-1"/> Clear All
+                </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                {history.length === 0 ? (
+                    <div className="text-center text-gray-400 text-sm py-8">No history found.</div>
+                ) : (
+                    history.map(item => (
+                        <div 
+                            key={item.id}
+                            onClick={() => { onLoad(item); onClose(); }}
+                            className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group"
+                        >
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="text-xs font-bold text-gray-700 truncate max-w-[180px]">{item.name}</span>
+                                <button onClick={(e) => handleDelete(item.id, e)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <X size={14}/>
+                                </button>
+                            </div>
+                            <div className="flex items-center text-[10px] text-gray-400 mb-2">
+                                <Clock size={10} className="mr-1"/>
+                                {new Date(item.timestamp).toLocaleString()}
+                            </div>
+                            <div className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded w-fit mb-1 border border-blue-100">
+                                Mode: {item.mode}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
 
 // --- Helpers ---
 
@@ -437,6 +513,9 @@ const PlanDiff: React.FC = () => {
 
     const [isFullscreen, setIsFullscreen] = useState(false);
     
+    // History State
+    const [showHistory, setShowHistory] = useState(false);
+
     // State for matches and highlighting
     const [matches, setMatches] = useState<Map<string, string>>(new Map());
     const [highlightedUids, setHighlightedUids] = useState<Set<string>>(new Set());
@@ -775,7 +854,45 @@ const PlanDiff: React.FC = () => {
         };
     }, [drawConnections]);
 
-    const handleCompare = () => {
+    const saveToHistory = (l: string, r: string, u: string, m: 'unified' | 'split') => {
+        if ((m === 'unified' && !u.trim()) || (m === 'split' && (!l.trim() || !r.trim()))) return;
+        
+        const historyKey = 'wdr_diff_history';
+        const existingStr = localStorage.getItem(historyKey);
+        let history: DiffHistoryItem[] = existingStr ? JSON.parse(existingStr) : [];
+        
+        // Avoid dups
+        if (history.length > 0) {
+            const last = history[0];
+            if (m === 'unified' && last.unified === u) return;
+            if (m === 'split' && last.left === l && last.right === r) return;
+        }
+  
+        const newItem: DiffHistoryItem = {
+            id: Date.now().toString(),
+            timestamp: Date.now(),
+            name: `Diff ${new Date().toLocaleTimeString()}`,
+            mode: m,
+            left: l,
+            right: r,
+            unified: u
+        };
+  
+        history = [newItem, ...history].slice(0, 30);
+        localStorage.setItem(historyKey, JSON.stringify(history));
+    };
+
+    const handleHistoryLoad = (item: DiffHistoryItem) => {
+        setInputMode(item.mode);
+        if (item.mode === 'unified') setUnifiedText(item.unified);
+        else {
+            setLeftText(item.left);
+            setRightText(item.right);
+        }
+        setTimeout(() => handleCompare(true), 50);
+    };
+
+    const handleCompare = (skipSave = false) => {
         let t1 = '';
         let t2 = '';
 
@@ -807,6 +924,8 @@ const PlanDiff: React.FC = () => {
             if (v2 < v1 * 0.95) setVerdict('Improved');
             else if (v2 > v1 * 1.05) setVerdict('Regressed');
             else setVerdict('Similar');
+
+            if (!skipSave) saveToHistory(leftText, rightText, unifiedText, inputMode);
         } else {
             setVerdict(null);
         }
@@ -822,7 +941,7 @@ const PlanDiff: React.FC = () => {
             setLeftText(p1);
             setRightText(p2);
         }
-        setTimeout(handleCompare, 100);
+        setTimeout(() => handleCompare(false), 100);
     };
 
     return (
@@ -834,6 +953,9 @@ const PlanDiff: React.FC = () => {
                     {t('diff.title')}
                 </h2>
                 <div className="flex space-x-3 items-center">
+                    <button onClick={() => setShowHistory(true)} className="p-1.5 rounded text-gray-500 hover:text-blue-600 hover:bg-gray-100 mr-2" title="History">
+                        <History size={18} />
+                    </button>
                     <button onClick={handleLoadSample} className="text-sm text-gray-500 hover:text-blue-600 font-medium">{t('diff.loadSample')}</button>
                     
                     {/* Fullscreen Toggle Button */}
@@ -846,7 +968,7 @@ const PlanDiff: React.FC = () => {
                     </button>
 
                     <button 
-                        onClick={handleCompare}
+                        onClick={() => handleCompare(false)}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm flex items-center shadow-sm"
                     >
                         <Activity size={14} className="mr-2"/> {t('diff.compare')}
@@ -968,7 +1090,12 @@ const PlanDiff: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="flex flex-col flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="flex flex-col flex-1 min-h-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden relative">
+                    <HistorySidebar 
+                        isOpen={showHistory} 
+                        onClose={() => setShowHistory(false)} 
+                        onLoad={handleHistoryLoad} 
+                    />
                     {/* Input Mode Tabs */}
                     <div className="flex border-b border-gray-100 bg-gray-50">
                         <button 
