@@ -16,8 +16,7 @@ import { useI18n } from '../context/I18nContext';
 import { usePlanContext } from '../context/PlanContext';
 
 // --- Types ---
-// ViewMode, PanelType are local UI states
-type ViewMode = 'tree' | 'flow';
+// PanelType is local UI state
 type PanelType = 'sql' | 'text' | 'visual';
 
 interface NodeViewProps {
