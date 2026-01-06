@@ -1,7 +1,6 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { ApiService } from '../services/apiService';
-import { ExecutionPlanNode } from '../types';
+import { EnhancedNode, PlanIssue, PlanType } from '../types';
 import { 
   Play, AlertCircle, Database, Zap, FileCode, MousePointer2, 
   GitBranch, AlignLeft, ChevronDown, ChevronRight, ChevronUp,
@@ -11,41 +10,15 @@ import {
   BookOpen, ThumbsUp, ThumbsDown, HardDrive, XOctagon, 
   FunctionSquare, ListOrdered, Sigma, CheckCircle, Info,
   Maximize, Minimize, ChevronsDown, ChevronsUp,
-  Clock, Activity, AlertTriangle, Lightbulb
+  Lightbulb, AlertTriangle
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
+import { usePlanContext } from '../context/PlanContext';
 
 // --- Types ---
-
-interface EnhancedNode extends Omit<ExecutionPlanNode, 'children'> {
-    uId: string;
-    width: number;
-    totalCost: number; 
-    selfCost: number;
-    percentage: number;
-    isCteDef: boolean;
-    isCteScan: boolean;
-    cteName: string;
-    children: EnhancedNode[];
-    nodeId?: string;
-    actualRows?: number;
-    actualTime?: number;
-    loops?: number; // Added for Analyze
-}
-
-interface PlanIssue {
-    ruleId: string;
-    title: string;
-    severity: 'High' | 'Medium' | 'Low';
-    type: 'Risk' | 'Suggestion';
-    description: string;
-    suggestion: string;
-    nodeUIds: string[];
-}
-
+// ViewMode, PanelType are local UI states
 type ViewMode = 'tree' | 'flow';
 type PanelType = 'sql' | 'text' | 'visual';
-type PlanType = 'Explain Only' | 'Explain Analyze' | 'Explain Performance';
 
 interface NodeViewProps {
     node: EnhancedNode;
@@ -605,14 +578,19 @@ const CostFlowView: React.FC<NodeViewProps> = ({
 
 const PlanVisualizer: React.FC = () => {
   const { t } = useI18n();
-  const [sql, setSql] = useState<string>('');
-  const [rawPlanText, setRawPlanText] = useState<string>('');
-  const [plan, setPlan] = useState<EnhancedNode | null>(null);
-  const [planType, setPlanType] = useState<PlanType>('Explain Only');
-  const [planIssues, setPlanIssues] = useState<PlanIssue[]>([]);
+  // State from Context
+  const { 
+      visSql: sql, setVisSql: setSql,
+      visRawPlanText: rawPlanText, setVisRawPlanText: setRawPlanText,
+      visPlan: plan, setVisPlan: setPlan,
+      visPlanType: planType, setVisPlanType: setPlanType,
+      visIssues: planIssues, setVisIssues: setPlanIssues,
+      visViewMode: viewMode, setVisViewMode: setViewMode
+  } = usePlanContext();
+
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<EnhancedNode | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  // View mode is now global
   const [hoveredCte, setHoveredCte] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [highlightedTable, setHighlightedTable] = useState<string | null>(null);
@@ -658,6 +636,13 @@ const PlanVisualizer: React.FC = () => {
         }
     }
   }, [plan]);
+
+  // If there's already a plan (from context), ensure we hide text input if desired, or keep default
+  useEffect(() => {
+      if (plan) {
+          setVisiblePanels(prev => ({ ...prev, text: false, sql: false }));
+      }
+  }, []); // Only run once on mount
 
   // Handle Tree Toggle
   const handleToggleTree = (uId: string) => {

@@ -12,10 +12,12 @@ import AuditLog from './pages/AuditLog';
 import PlanVisualizer from './pages/PlanVisualizer';
 import PlanDiff from './pages/PlanDiff';
 import { I18nProvider } from './context/I18nContext';
+import { PlanProvider } from './context/PlanContext';
 
 const App: React.FC = () => {
   return (
     <I18nProvider>
+      <PlanProvider>
         <HashRouter>
           <Layout>
             <Routes>
@@ -31,6 +33,7 @@ const App: React.FC = () => {
             </Routes>
           </Layout>
         </HashRouter>
+      </PlanProvider>
     </I18nProvider>
   );
 };

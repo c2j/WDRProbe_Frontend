@@ -7,24 +7,8 @@ import {
   X, Maximize, Minimize
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
-
-// --- Types ---
-interface DiffNode {
-    uId: string;
-    id: string; // Sequential ID (n_0, n_1)
-    nodeId?: string; // DB Plan ID (1, 2)
-    operation: string;
-    cost: number;
-    totalCost: number;
-    selfCost: number;
-    rows: number;
-    width: number;
-    actualTime?: number;
-    actualRows?: number;
-    percentage: number;
-    details: string;
-    children: DiffNode[];
-}
+import { usePlanContext } from '../context/PlanContext';
+import { DiffNode } from '../types';
 
 interface NodePair {
     left: DiffNode | null;
@@ -440,15 +424,18 @@ const DiffFlowNode: React.FC<DiffFlowNodeProps> = ({ node, maxCost, depth = 0, s
 
 const PlanDiff: React.FC = () => {
     const { t } = useI18n();
-    const [inputMode, setInputMode] = useState<'unified' | 'split'>('unified');
-    const [leftText, setLeftText] = useState('');
-    const [rightText, setRightText] = useState('');
-    const [unifiedText, setUnifiedText] = useState('');
+    // Context State
+    const {
+        diffInputMode: inputMode, setDiffInputMode: setInputMode,
+        diffLeftText: leftText, setDiffLeftText: setLeftText,
+        diffRightText: rightText, setDiffRightText: setRightText,
+        diffUnifiedText: unifiedText, setDiffUnifiedText: setUnifiedText,
+        diffPlanLeft: planLeft, setDiffPlanLeft: setPlanLeft,
+        diffPlanRight: planRight, setDiffPlanRight: setPlanRight,
+        diffVerdict: verdict, setDiffVerdict: setVerdict,
+    } = usePlanContext();
+
     const [isFullscreen, setIsFullscreen] = useState(false);
-    
-    const [planLeft, setPlanLeft] = useState<DiffNode | null>(null);
-    const [planRight, setPlanRight] = useState<DiffNode | null>(null);
-    const [verdict, setVerdict] = useState<'Improved' | 'Regressed' | 'Similar' | null>(null);
     
     // State for matches and highlighting
     const [matches, setMatches] = useState<Map<string, string>>(new Map());
@@ -466,6 +453,8 @@ const PlanDiff: React.FC = () => {
         if (planLeft && planRight) {
             const m = calculateMatches(planLeft, planRight);
             setMatches(m);
+            // Don't auto-reset highlighted UIDs unless necessary, to preserve selection if possible, 
+            // but for simplicity resetting on new plan is safer.
             setHighlightedUids(new Set()); 
             setSelectedPair(null);
         } else {

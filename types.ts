@@ -205,3 +205,50 @@ export interface DashboardMetrics {
   trendData: { time: string; value: number }[];
   hotIssues: { title: string; desc: string; }[];
 }
+
+// --- Extended Plan Types for Context ---
+
+export type PlanType = 'Explain Only' | 'Explain Analyze' | 'Explain Performance';
+
+export interface EnhancedNode extends Omit<ExecutionPlanNode, 'children'> {
+    uId: string;
+    width: number;
+    totalCost: number; 
+    selfCost: number;
+    percentage: number;
+    isCteDef: boolean;
+    isCteScan: boolean;
+    cteName: string;
+    children: EnhancedNode[];
+    nodeId?: string;
+    actualRows?: number;
+    actualTime?: number;
+    loops?: number;
+}
+
+export interface PlanIssue {
+    ruleId: string;
+    title: string;
+    severity: 'High' | 'Medium' | 'Low';
+    type: 'Risk' | 'Suggestion';
+    description: string;
+    suggestion: string;
+    nodeUIds: string[];
+}
+
+export interface DiffNode {
+    uId: string;
+    id: string; // Sequential ID (n_0, n_1)
+    nodeId?: string; // DB Plan ID (1, 2)
+    operation: string;
+    cost: number;
+    totalCost: number;
+    selfCost: number;
+    rows: number;
+    width: number;
+    actualTime?: number;
+    actualRows?: number;
+    percentage: number;
+    details: string;
+    children: DiffNode[];
+}
