@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 
 type Language = 'en' | 'zh';
@@ -15,6 +16,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Menu
     'menu.dashboard': 'Dashboard',
     'menu.wdrAnalyze': 'WDR Analysis',
+    'menu.wdrComparison': 'WDR Comparison',
     'menu.reports': 'Reports',
     'menu.comparison': 'Comparison',
     'menu.visualizer': 'Plan Visualizer',
@@ -88,7 +90,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rep.obj.liveTup': 'Live Tuples',
     'rep.obj.deadTup': 'Dead Tuples',
     
-    // Comparison
+    // Comparison (General)
     'comp.tab.sql': 'Top SQL',
     'comp.tab.wait': 'Wait Events',
     'comp.tab.obj': 'Object Stats',
@@ -130,6 +132,44 @@ const translations: Record<Language, Record<string, string>> = {
     'comp.name': 'Comparison Name',
     'comp.desc': 'Description',
     'comp.save': 'Save',
+
+    // WDR Comparison Specific
+    'wdr.comp.title': 'WDR Comparison Analysis',
+    'wdr.comp.reset': 'Reset All',
+    'wdr.comp.baseline': 'Baseline',
+    'wdr.comp.target': 'Target',
+    'wdr.comp.uploadBase': 'Upload Baseline WDR',
+    'wdr.comp.addTarget': 'Add Target',
+    'wdr.comp.keyMetrics': 'Key Metrics',
+    'wdr.comp.topWait': 'Top Wait Events',
+    'wdr.comp.topSql': 'Top 20 SQL',
+    'wdr.comp.eventName': 'Event Name',
+    'wdr.comp.baseWaits': 'Base Waits',
+    'wdr.comp.baseAvg': 'Base Avg',
+    'wdr.comp.baseMax': 'Base Max',
+    'wdr.comp.waits': 'Waits',
+    'wdr.comp.avg': 'Avg',
+    'wdr.comp.max': 'Max',
+    'wdr.comp.sort.total': 'By Total Time',
+    'wdr.comp.sort.avg': 'By Avg Time',
+    'wdr.comp.sort.diff': 'By Biggest Diff',
+    'wdr.comp.sort.freq': 'By Freq Diff',
+    'wdr.comp.uniqueId': 'Unique ID',
+    'wdr.comp.action': 'Action',
+    'wdr.comp.empty': 'Upload a Baseline report and at least one Target report to start comparison.',
+    'wdr.comp.sqlDetail': 'SQL Comparison',
+    'wdr.comp.sqlText': 'SQL Text',
+    'wdr.comp.perfComp': 'Performance Comparison',
+    'wdr.comp.notFound': 'Not found',
+    'wdr.comp.metric.calls': 'Executions',
+    'wdr.comp.metric.total': 'Total Time',
+    'wdr.comp.metric.avg': 'Avg Time',
+    'wdr.comp.metric.cpu': 'CPU Time',
+    'wdr.comp.metric.io': 'IO Time',
+    'wdr.comp.metric.rows': 'Rows',
+    'wdr.comp.metric.lread': 'Logical Reads',
+    'wdr.comp.metric.cps': 'Exec Freq (Calls/s)',
+    'wdr.comp.user': 'User',
 
     // Thresholds
     'thr.categories': 'Categories',
@@ -211,6 +251,11 @@ const translations: Record<Language, Record<string, string>> = {
     'wdr.tab.wait': 'Wait Events',
     'wdr.tab.sql': 'Top SQL',
     'wdr.tab.obj': 'Object Stats',
+
+    'desc.wait.LockMgrLock': 'Waiting for a lock on a relation or object. High values indicate contention.',
+    'desc.wait.WALSync': 'Waiting for WAL flush to disk. High values usually indicate disk I/O bottleneck.',
+    'desc.wait.DataFileRead': 'Waiting for data block read from disk.',
+    'desc.wait.DataFileWrite': 'Waiting for data write to disk.',
 
     // Visualizer
     'vis.title': 'Plan Visualizer',
@@ -347,6 +392,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Menu
     'menu.dashboard': '仪表盘',
     'menu.wdrAnalyze': 'WDR 分析',
+    'menu.wdrComparison': 'WDR 对比',
     'menu.reports': '报告管理',
     'menu.comparison': '性能比对',
     'menu.visualizer': '计划可视化',
@@ -420,7 +466,7 @@ const translations: Record<Language, Record<string, string>> = {
     'rep.obj.liveTup': '活元组',
     'rep.obj.deadTup': '死元组',
 
-    // Comparison
+    // Comparison (General)
     'comp.tab.sql': 'Top SQL',
     'comp.tab.wait': '等待事件',
     'comp.tab.obj': '对象统计',
@@ -462,6 +508,44 @@ const translations: Record<Language, Record<string, string>> = {
     'comp.name': '比对名称',
     'comp.desc': '描述',
     'comp.save': '保存',
+
+    // WDR Comparison Specific
+    'wdr.comp.title': 'WDR 对比分析',
+    'wdr.comp.reset': '重置所有',
+    'wdr.comp.baseline': '基准报告',
+    'wdr.comp.target': '对比报告',
+    'wdr.comp.uploadBase': '上传基准 WDR',
+    'wdr.comp.addTarget': '添加对比报告',
+    'wdr.comp.keyMetrics': '关键指标',
+    'wdr.comp.topWait': 'Top 等待事件',
+    'wdr.comp.topSql': 'Top 20 SQL',
+    'wdr.comp.eventName': '事件名称',
+    'wdr.comp.baseWaits': '基准等待次数',
+    'wdr.comp.baseAvg': '基准平均(us)',
+    'wdr.comp.baseMax': '基准最大(us)',
+    'wdr.comp.waits': '等待次数',
+    'wdr.comp.avg': '平均',
+    'wdr.comp.max': '最大',
+    'wdr.comp.sort.total': '按总耗时',
+    'wdr.comp.sort.avg': '按平均耗时',
+    'wdr.comp.sort.diff': '按差异幅度',
+    'wdr.comp.sort.freq': '按频率变化',
+    'wdr.comp.uniqueId': '唯一 ID',
+    'wdr.comp.action': '操作',
+    'wdr.comp.empty': '请上传一份基准报告和至少一份对比报告以开始分析。',
+    'wdr.comp.sqlDetail': 'SQL 对比详情',
+    'wdr.comp.sqlText': 'SQL 文本',
+    'wdr.comp.perfComp': '性能指标对比',
+    'wdr.comp.notFound': '未找到',
+    'wdr.comp.metric.calls': '执行次数',
+    'wdr.comp.metric.total': '总耗时',
+    'wdr.comp.metric.avg': '平均耗时',
+    'wdr.comp.metric.cpu': 'CPU 时间',
+    'wdr.comp.metric.io': 'IO 时间',
+    'wdr.comp.metric.rows': '行数',
+    'wdr.comp.metric.lread': '逻辑读',
+    'wdr.comp.metric.cps': '执行频率 (次/秒)',
+    'wdr.comp.user': '用户',
 
     // Thresholds
     'thr.categories': '分类',
@@ -543,6 +627,12 @@ const translations: Record<Language, Record<string, string>> = {
     'wdr.tab.wait': '等待事件',
     'wdr.tab.sql': 'Top SQL',
     'wdr.tab.obj': '对象统计',
+
+    // WDR Comparison
+    'desc.wait.LockMgrLock': '正在等待关系或对象上的锁。值较高表示存在锁争用。',
+    'desc.wait.WALSync': '等待 WAL 刷盘。值较高通常表示磁盘 I/O 瓶颈。',
+    'desc.wait.DataFileRead': '等待从磁盘读取数据块。',
+    'desc.wait.DataFileWrite': '等待数据写入磁盘。',
 
     // Visualizer
     'vis.title': '执行计划可视化',
@@ -678,7 +768,7 @@ const translations: Record<Language, Record<string, string>> = {
 };
 
 export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('en');
+  const [language, setLanguage] = useState<Language>('zh'); // Default to Chinese
 
   const t = useCallback((key: string, params?: Record<string, string | number>) => {
     let text = translations[language][key] || key;

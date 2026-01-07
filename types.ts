@@ -44,6 +44,7 @@ export interface WdrWaitEvent {
   waits: number;
   totalWaitTime: number; // us or ms depending on report
   avgWaitTime: number;
+  maxWaitTime?: number; // New field
   pctDBTime: number;
 }
 

@@ -12,6 +12,7 @@ import AuditLog from './pages/AuditLog';
 import PlanVisualizer from './pages/PlanVisualizer';
 import PlanDiff from './pages/PlanDiff';
 import WDRReportAnalyze from './pages/WDRReportAnalyze';
+import WDRComparison from './pages/WDRComparison';
 import { I18nProvider } from './context/I18nContext';
 import { PlanProvider } from './context/PlanContext';
 import { WDRProvider } from './context/WDRContext';
@@ -26,6 +27,7 @@ const App: React.FC = () => {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/wdr-analysis" element={<WDRReportAnalyze />} />
+                <Route path="/wdr-comparison" element={<WDRComparison />} />
                 <Route path="/reports" element={<ReportManagement />} />
                 <Route path="/reports/:id" element={<ReportDetail />} />
                 <Route path="/comparison" element={<ComparisonAnalysis />} />
