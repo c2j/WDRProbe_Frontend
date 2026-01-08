@@ -44,6 +44,13 @@ interface KnowledgeEntry {
 }
 
 const KNOWLEDGE_KEYS: KnowledgeEntry[] = [
+    { key: 'hintLeading', i18nKey: 'vis.kb.hintLeading', icon: GitBranch, keywords: [] },
+    { key: 'hintJoinMethod', i18nKey: 'vis.kb.hintJoinMethod', icon: RefreshCw, keywords: [] },
+    { key: 'hintRows', i18nKey: 'vis.kb.hintRows', icon: ListOrdered, keywords: [] },
+    { key: 'hintScan', i18nKey: 'vis.kb.hintScan', icon: Search, keywords: [] },
+    { key: 'hintStream', i18nKey: 'vis.kb.hintStream', icon: LinkIcon, keywords: [] },
+    { key: 'hintBlock', i18nKey: 'vis.kb.hintBlock', icon: Layers, keywords: [] },
+    { key: 'hintOther', i18nKey: 'vis.kb.hintOther', icon: FileCode, keywords: [] },
     { key: 'diskSpill', i18nKey: 'vis.kb.diskSpill', icon: HardDrive, keywords: [] },
     { key: 'cartesian', i18nKey: 'vis.kb.nestLoop', icon: XOctagon, keywords: [] },
     { key: 'userFunc', i18nKey: 'vis.kb.userFunc', icon: FunctionSquare, keywords: ['func', 'fnc'] },
@@ -68,6 +75,23 @@ const KNOWLEDGE_KEYS: KnowledgeEntry[] = [
 
 function ArrowUpDownIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> }
 function CheckIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> }
+
+// --- Hint Analysis ---
+const detectHints = (sql: string) => {
+    const hints = new Set<string>();
+    const matches = sql.matchAll(/\/\*\+\s*([\s\S]*?)\s*\*\//g);
+    for (const match of matches) {
+        const content = match[1].toLowerCase();
+        if (content.includes('leading')) hints.add('hintLeading');
+        if (content.match(/(nestloop|hashjoin|mergejoin|nestloop_index)/)) hints.add('hintJoinMethod');
+        if (content.includes('rows')) hints.add('hintRows');
+        if (content.match(/(tablescan|indexscan|indexonlyscan|bitmapscan)/)) hints.add('hintScan');
+        if (content.match(/(broadcast|redistribute)/)) hints.add('hintStream');
+        if (content.match(/(blockname)/)) hints.add('hintBlock');
+        if (content.match(/(no_expand|no_gpc|predpush|wlmrule|use_cplan|use_gplan|material_subplan|materialize_inner|use_hash_agg|use_sort_agg)/)) hints.add('hintOther');
+    }
+    return Array.from(hints);
+};
 
 // --- Analysis Engine ---
 
@@ -278,7 +302,7 @@ const HistorySidebar: React.FC<{ isOpen: boolean; onClose: () => void; onLoad: (
     );
 };
 
-const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey: string | null }> = ({ isOpen, onClose, activeKey }) => {
+const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey: string | null; detectedHints: string[] }> = ({ isOpen, onClose, activeKey, detectedHints }) => {
     const { t } = useI18n();
     const [searchTerm, setSearchTerm] = useState('');
     const refs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -295,6 +319,15 @@ const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey
         t(`${k.i18nKey}.title`).toLowerCase().includes(searchTerm.toLowerCase()) ||
         k.key.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // Sort to show detected hints first if detectedHints is present
+    const sortedItems = [...filteredItems].sort((a, b) => {
+        const aDetected = detectedHints.includes(a.key);
+        const bDetected = detectedHints.includes(b.key);
+        if (aDetected && !bDetected) return -1;
+        if (!aDetected && bDetected) return 1;
+        return 0;
+    });
 
     return (
         <div className="w-80 bg-white border-l border-gray-200 flex flex-col h-full shadow-xl z-20 transition-all duration-300">
@@ -320,20 +353,24 @@ const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-                {filteredItems.map(item => {
+                {sortedItems.map(item => {
                     const isActive = item.key === activeKey;
+                    const isDetected = detectedHints.includes(item.key);
                     const Icon = item.icon;
                     return (
                         <div 
                             key={item.key}
                             ref={el => { refs.current[item.key] = el; }}
-                            className={`bg-white rounded-lg p-4 shadow-sm border transition-all duration-300 ${isActive ? 'border-blue-500 ring-2 ring-blue-100 transform scale-[1.02]' : 'border-gray-100 hover:shadow-md'}`}
+                            className={`bg-white rounded-lg p-4 shadow-sm border transition-all duration-300 ${isActive ? 'border-blue-500 ring-2 ring-blue-100 transform scale-[1.02]' : isDetected ? 'border-purple-300 ring-2 ring-purple-50' : 'border-gray-100 hover:shadow-md'}`}
                         >
                             <div className="flex items-center mb-2">
-                                <div className={`p-2 rounded-lg mr-3 ${isActive ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>
+                                <div className={`p-2 rounded-lg mr-3 ${isActive ? 'bg-blue-100 text-blue-600' : isDetected ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600'}`}>
                                     <Icon size={18} />
                                 </div>
-                                <h4 className={`font-bold text-sm ${isActive ? 'text-blue-700' : 'text-gray-800'}`}>{t(`${item.i18nKey}.title`)}</h4>
+                                <div>
+                                    <h4 className={`font-bold text-sm ${isActive ? 'text-blue-700' : isDetected ? 'text-purple-700' : 'text-gray-800'}`}>{t(`${item.i18nKey}.title`)}</h4>
+                                    {isDetected && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">Detected</span>}
+                                </div>
                             </div>
                             <p className="text-xs text-gray-600 mb-3 leading-relaxed">{t(`${item.i18nKey}.desc`)}</p>
                             <div className="space-y-2">
@@ -841,6 +878,8 @@ const PlanVisualizer: React.FC = () => {
     }
   }, [highlightedIssueNodes, viewMode]);
 
+  const detectedHints = useMemo(() => detectHints(sql), [sql]);
+
   const activeKnowledgeKey = useMemo(() => {
     if (!selectedNode) return null;
     const op = selectedNode.operation.toLowerCase();
@@ -1119,7 +1158,28 @@ const PlanVisualizer: React.FC = () => {
         {/* Content */}
         <div className="flex flex-1 gap-4 min-h-0 relative">
             <div className={`${getPanelClasses('sql')} flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
-                <PanelHeader title={t('vis.sqlEditor')} icon={FileCode} subtitle={t('vis.syntax')} type="sql" />
+                <PanelHeader 
+                    title={t('vis.sqlEditor')} 
+                    icon={FileCode} 
+                    subtitle={t('vis.syntax')} 
+                    type="sql" 
+                    customAction={
+                        detectedHints.length > 0 && (
+                            <button 
+                                onClick={() => { 
+                                    setShowKnowledgeBase(true); 
+                                    // Ensure visual panel is visible to show KB 
+                                    if (!visiblePanels.visual) togglePanel('visual');
+                                }}
+                                className="flex items-center px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded text-[10px] mr-2 hover:bg-yellow-100 transition-colors animate-pulse"
+                                title={`${detectedHints.length} Hints Detected`}
+                            >
+                                <Lightbulb size={10} className="mr-1 fill-yellow-500 text-yellow-600"/>
+                                {detectedHints.length} Hints
+                            </button>
+                        )
+                    }
+                />
                 <textarea className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none text-gray-700 bg-[#fbfbfb]" value={sql} onChange={(e) => setSql(e.target.value)} placeholder={t('vis.pastePlaceholder')}/>
             </div>
             <div className={`${getPanelClasses('text')} flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden`}>
@@ -1255,7 +1315,12 @@ const PlanVisualizer: React.FC = () => {
                         )}
                     </div>
                  </div>
-                 <KnowledgePanel isOpen={showKnowledgeBase} onClose={() => setShowKnowledgeBase(false)} activeKey={activeKnowledgeKey} />
+                 <KnowledgePanel 
+                    isOpen={showKnowledgeBase} 
+                    onClose={() => setShowKnowledgeBase(false)} 
+                    activeKey={activeKnowledgeKey} 
+                    detectedHints={detectedHints} 
+                 />
             </div>
             
             <HistorySidebar 

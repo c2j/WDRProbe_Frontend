@@ -51,6 +51,34 @@ export interface WdrWaitEvent {
 export interface WdrConfigSetting {
   name: string;
   value: string;
+  type?: string;
+  category?: string;
+}
+
+export interface WdrHostCpu {
+    cpus: number;
+    cores: number;
+    sockets: number;
+    loadAvgBegin: number;
+    loadAvgEnd: number;
+    user: number;
+    system: number;
+    wio: number;
+    idle: number;
+}
+
+export interface WdrIoProfile {
+    ioType: string;
+    readReqs: number;
+    writeReqs: number;
+    readBytes: number;
+    writeBytes: number;
+}
+
+export interface WdrMemory {
+    component: string;
+    beginVal: string;
+    endVal: string;
 }
 
 // Expanded Top SQL Interface
@@ -107,6 +135,9 @@ export interface WdrReportDetail {
     perTxn: number;
     perExec?: number;
   }[];
+  hostCpu: WdrHostCpu | null;
+  ioProfile: WdrIoProfile[];
+  memoryStats: WdrMemory[];
   waitEvents: WdrWaitEvent[];
   topSql: WdrTopSqlItem[];
   objectStats: WdrObjectStat[];

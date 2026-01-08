@@ -251,6 +251,7 @@ const translations: Record<Language, Record<string, string>> = {
     'wdr.tab.wait': 'Wait Events',
     'wdr.tab.sql': 'Top SQL',
     'wdr.tab.obj': 'Object Stats',
+    'wdr.tab.settings': 'Settings',
 
     'desc.wait.LockMgrLock': 'Waiting for a lock on a relation or object. High values indicate contention.',
     'desc.wait.WALSync': 'Waiting for WAL flush to disk. High values usually indicate disk I/O bottleneck.',
@@ -317,6 +318,42 @@ const translations: Record<Language, Record<string, string>> = {
     'vis.kb.sort.desc': 'Sorting rows.',
     'vis.kb.limit.title': 'Limit',
     'vis.kb.limit.desc': 'Limiting rows returned.',
+
+    // Plan Hints KB
+    'vis.kb.hintLeading.title': 'Join Order Hint (leading)',
+    'vis.kb.hintLeading.desc': 'Specifies the join order of tables. E.g., leading(t1 t2) forces t1 to join t2. Useful when optimizer picks inefficient join paths.',
+    'vis.kb.hintLeading.pros': 'Fixes inefficient join orders.',
+    'vis.kb.hintLeading.cons': 'May prevent better plans if data distribution changes.',
+
+    'vis.kb.hintJoinMethod.title': 'Join Method Hint',
+    'vis.kb.hintJoinMethod.desc': 'Forces a specific join algorithm (nestloop, hashjoin, mergejoin). E.g., nestloop(t1 t2).',
+    'vis.kb.hintJoinMethod.pros': 'Optimizes specific scenarios (e.g., small table nestloop).',
+    'vis.kb.hintJoinMethod.cons': 'Risk of severe performance drop if wrongly applied.',
+
+    'vis.kb.hintRows.title': 'Rows Hint',
+    'vis.kb.hintRows.desc': 'Adjusts cardinality estimates. Supports absolute (#) or relative (+, -, *) adjustments.',
+    'vis.kb.hintRows.pros': 'Corrects bad estimates influencing plan choice.',
+    'vis.kb.hintRows.cons': 'Requires manual tuning; may become stale.',
+
+    'vis.kb.hintScan.title': 'Scan Method Hint',
+    'vis.kb.hintScan.desc': 'Forces scan type (tablescan, indexscan, indexonlyscan, bitmapscan).',
+    'vis.kb.hintScan.pros': 'Forces index usage when optimizer prefers seq scan.',
+    'vis.kb.hintScan.cons': 'Index scan on large portion of table can be slower.',
+
+    'vis.kb.hintStream.title': 'Stream Hint',
+    'vis.kb.hintStream.desc': 'Controls data distribution (broadcast, redistribute) in parallel plans.',
+    'vis.kb.hintStream.pros': 'Optimizes data movement in cluster.',
+    'vis.kb.hintStream.cons': 'Only effective for parallel/distributed plans.',
+
+    'vis.kb.hintBlock.title': 'Blockname Hint',
+    'vis.kb.hintBlock.desc': 'Names a query block or sub-link for reference in other hints.',
+    'vis.kb.hintBlock.pros': 'Enables hinting of complex subqueries.',
+    'vis.kb.hintBlock.cons': 'Complexity in managing block names.',
+
+    'vis.kb.hintOther.title': 'Other Hints',
+    'vis.kb.hintOther.desc': 'Includes no_expand, no_gpc, predpush, wlmrule, etc.',
+    'vis.kb.hintOther.pros': 'Fine-grained control over optimizer behavior.',
+    'vis.kb.hintOther.cons': 'Advanced usage only.',
     
     // Visualizer Rules
     'vis.rule.001.title': 'High Total Cost',
@@ -627,6 +664,7 @@ const translations: Record<Language, Record<string, string>> = {
     'wdr.tab.wait': '等待事件',
     'wdr.tab.sql': 'Top SQL',
     'wdr.tab.obj': '对象统计',
+    'wdr.tab.settings': '数据库参数',
 
     // WDR Comparison
     'desc.wait.LockMgrLock': '正在等待关系或对象上的锁。值较高表示存在锁争用。',
@@ -694,6 +732,42 @@ const translations: Record<Language, Record<string, string>> = {
     'vis.kb.sort.desc': '排序。',
     'vis.kb.limit.title': 'Limit',
     'vis.kb.limit.desc': '限制返回行数。',
+
+    // Plan Hints KB
+    'vis.kb.hintLeading.title': '连接顺序 Hint (leading)',
+    'vis.kb.hintLeading.desc': '指定表的连接顺序。例如 leading(t1 t2) 强制 t1 和 t2 连接。',
+    'vis.kb.hintLeading.pros': '修复优化器选择的低效连接顺序。',
+    'vis.kb.hintLeading.cons': '如果数据分布变化，可能阻碍生成更好的计划。',
+
+    'vis.kb.hintJoinMethod.title': '连接方式 Hint',
+    'vis.kb.hintJoinMethod.desc': '强制特定的连接算法 (nestloop, hashjoin, mergejoin)。例如 nestloop(t1 t2)。',
+    'vis.kb.hintJoinMethod.pros': '优化特定场景（如小表嵌套循环）。',
+    'vis.kb.hintJoinMethod.cons': '如果误用可能导致严重的性能下降。',
+
+    'vis.kb.hintRows.title': '行数 Hint (rows)',
+    'vis.kb.hintRows.desc': '调整基数估算。支持绝对值(#)或相对值(+,-,*)调整。',
+    'vis.kb.hintRows.pros': '纠正影响计划选择的错误估算。',
+    'vis.kb.hintRows.cons': '需要手动调整，数据变化后可能失效。',
+
+    'vis.kb.hintScan.title': '扫描方式 Hint',
+    'vis.kb.hintScan.desc': '强制扫描类型 (tablescan, indexscan, indexonlyscan, bitmapscan)。',
+    'vis.kb.hintScan.pros': '当优化器倾向于全表扫描时强制使用索引。',
+    'vis.kb.hintScan.cons': '对大比例数据的索引扫描可能更慢。',
+
+    'vis.kb.hintStream.title': 'Stream Hint',
+    'vis.kb.hintStream.desc': '控制并行计划中的数据分布 (broadcast, redistribute)。',
+    'vis.kb.hintStream.pros': '优化集群内的数据移动。',
+    'vis.kb.hintStream.cons': '仅在并行/分布式计划中有效。',
+
+    'vis.kb.hintBlock.title': 'Blockname Hint',
+    'vis.kb.hintBlock.desc': '命名查询块或子链接，以便在其他 Hint 中引用。',
+    'vis.kb.hintBlock.pros': '支持对复杂子查询进行 Hint。',
+    'vis.kb.hintBlock.cons': '管理块名称较为复杂。',
+
+    'vis.kb.hintOther.title': '其他 Hint',
+    'vis.kb.hintOther.desc': '包含 no_expand, no_gpc, predpush, wlmrule 等。',
+    'vis.kb.hintOther.pros': '对优化器行为进行精细控制。',
+    'vis.kb.hintOther.cons': '仅限高级用法。',
 
     // Visualizer Rules
     'vis.rule.001.title': '总代价过高',

@@ -255,6 +255,9 @@ export const ApiService = {
         { metric: 'Executes (SQL)', perSec: 1, perTxn: 0, perExec: 1 },
         { metric: 'Transactions', perSec: 3, perTxn: 1, perExec: 0 },
       ],
+      hostCpu: null,
+      ioProfile: [],
+      memoryStats: [],
       waitEvents: [
         { event: 'CPU', waitClass: 'CPU', waits: 0, totalWaitTime: 5443, avgWaitTime: 0, pctDBTime: 95.3 },
         { event: 'db_file_sequential_read', waitClass: 'User I/O', waits: 100, totalWaitTime: 200, avgWaitTime: 2, pctDBTime: 3.5 },

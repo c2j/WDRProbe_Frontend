@@ -1,10 +1,45 @@
 
-import { WdrReportDetail, WdrEfficiency, WdrWaitEvent, WdrTopSqlItem, WdrObjectStat, WdrConfigSetting } from '../types';
+import { WdrReportDetail, WdrEfficiency, WdrWaitEvent, WdrTopSqlItem, WdrObjectStat, WdrConfigSetting, WdrHostCpu, WdrIoProfile, WdrMemory } from '../types';
 
 export const parseWdrHtml = (html: string): WdrReportDetail => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
+    // Helper to find table by ID or Title content
+    const findTable = (ids: string[], keywords: string[]): HTMLTableElement | null => {
+        // Try IDs first
+        for (const id of ids) {
+            const div = doc.getElementById(id);
+            if (div) {
+                const table = div.querySelector('table');
+                if (table) return table;
+            }
+        }
+        // Try searching all tables by previous element text or content
+        const allTables = Array.from(doc.querySelectorAll('table'));
+        for (const table of allTables) {
+            // Check previous sibling for title
+            let prev = table.previousElementSibling;
+            let foundTitle = false;
+            let attempts = 0;
+            while(prev && attempts < 3) {
+                if (prev.textContent && keywords.some(k => prev!.textContent!.toLowerCase().includes(k.toLowerCase()))) {
+                    foundTitle = true;
+                    break;
+                }
+                prev = prev.previousElementSibling;
+                attempts++;
+            }
+            if (foundTitle) return table;
+
+            // Check parent ID
+            if (table.parentElement && keywords.some(k => table.parentElement!.id.toLowerCase().includes(k.toLowerCase().replace(/ /g, '_')))) {
+                return table;
+            }
+        }
+        return null;
+    };
+
     // 1. Meta Data (Host Info table)
     const tables = doc.querySelectorAll('table.tdiff');
     let instanceName = 'Unknown Instance';
@@ -72,7 +107,7 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
     }
 
     // 2. Efficiency
-    const effTable = doc.getElementById('Instance_Efficiency_Percentages_(Target_100%)2')?.querySelector('table');
+    const effTable = findTable(['Instance_Efficiency_Percentages_(Target_100%)2', 'Instance_Efficiency_Percentages'], ['Instance Efficiency Percentages']);
     const efficiency: WdrEfficiency[] = [];
     if (effTable) {
         effTable.querySelectorAll('tr').forEach((row, idx) => {
@@ -89,7 +124,7 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
     }
 
     // 3. Load Profile
-    const loadTable = doc.getElementById('Load_Profile2')?.querySelector('table');
+    const loadTable = findTable(['Load_Profile2', 'Load_Profile'], ['Load Profile']);
     const loadProfile: any[] = [];
     if (loadTable) {
         loadTable.querySelectorAll('tr').forEach((row, idx) => {
@@ -106,26 +141,97 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
         });
     }
 
-    // 3.5 Wait Events
-    const waitEvents: WdrWaitEvent[] = [];
-    const waitEventContainerIds = [
-        'Top_10_Foreground_Events_by_Total_Wait_Time2',
-        'Top_10_Foreground_Events_by_Total_Wait_Time',
-        'Top_10_Events_by_Total_Wait_Time2',
-        'Top_10_Events_by_Total_Wait_Time',
-        'Wait_Events(by_wait_time)2',
-        'Wait_Events(by_wait_time)'
-    ];
+    // --- NEW: Host CPU ---
+    const hostCpuTable = findTable(['Host_CPU2', 'Host_CPU'], ['Host CPU']);
+    let hostCpu: WdrHostCpu | null = null;
+    if (hostCpuTable) {
+        const rows = hostCpuTable.rows;
+        if (rows.length >= 2) {
+            const headers = Array.from(rows[0].cells).map(c => c.textContent?.trim().toLowerCase() || '');
+            const cells = rows[1].cells;
+            
+            const getVal = (keys: string[]) => {
+                const idx = headers.findIndex(h => keys.some(k => h.includes(k.toLowerCase())));
+                if (idx !== -1 && idx < cells.length) {
+                    return parseFloat(cells[idx].textContent?.trim() || '0');
+                }
+                return 0;
+            };
 
-    let waitTable: HTMLTableElement | null = null;
-    for (const id of waitEventContainerIds) {
-        const div = doc.getElementById(id);
-        if (div) {
-            waitTable = div.querySelector('table');
-            if (waitTable) break;
+            hostCpu = {
+                cpus: getVal(['CPUs']),
+                cores: getVal(['Cores']),
+                sockets: getVal(['Sockets']),
+                loadAvgBegin: getVal(['Load Average Begin']),
+                loadAvgEnd: getVal(['Load Average End']),
+                user: getVal(['%User']),
+                system: getVal(['%System']),
+                wio: getVal(['%WIO']),
+                idle: getVal(['%Idle'])
+            };
         }
     }
 
+    // --- NEW: IO Profile ---
+    const ioProfileTable = findTable(['IO_Profile2', 'IO_Profile'], ['IO Profile']);
+    const ioProfile: WdrIoProfile[] = [];
+    if (ioProfileTable) {
+        const rows = Array.from(ioProfileTable.querySelectorAll('tr'));
+        if (rows.length > 1) {
+            const headers = Array.from(rows[0].cells).map(c => c.textContent?.trim().toLowerCase() || '');
+            const idxType = headers.findIndex(h => h.includes('io type') || h.includes('type'));
+            const idxReadReq = headers.findIndex(h => h.includes('read requests'));
+            const idxWriteReq = headers.findIndex(h => h.includes('write requests'));
+            const idxReadBytes = headers.findIndex(h => h.includes('read bytes'));
+            const idxWriteBytes = headers.findIndex(h => h.includes('write bytes'));
+
+            rows.slice(1).forEach(row => {
+                const cells = row.cells;
+                if (cells.length > 1) {
+                    const getNum = (idx: number) => (idx !== -1 && idx < cells.length) ? parseFloat(cells[idx].textContent?.replace(/,/g, '') || '0') : 0;
+                    ioProfile.push({
+                        ioType: idxType !== -1 ? cells[idxType].textContent?.trim() || '' : '',
+                        readReqs: getNum(idxReadReq),
+                        writeReqs: getNum(idxWriteReq),
+                        readBytes: getNum(idxReadBytes),
+                        writeBytes: getNum(idxWriteBytes)
+                    });
+                }
+            });
+        }
+    }
+
+    // --- NEW: Memory Statistics ---
+    const memStatTable = findTable(['Memory_Statistics2', 'Memory_Statistics'], ['Memory Statistics']);
+    const memoryStats: WdrMemory[] = [];
+    if (memStatTable) {
+        const rows = Array.from(memStatTable.querySelectorAll('tr'));
+        if (rows.length > 1) {
+            const headers = Array.from(rows[0].cells).map(c => c.textContent?.trim().toLowerCase() || '');
+            const idxName = headers.findIndex(h => h.includes('memory name') || h.includes('component'));
+            const idxBegin = headers.findIndex(h => h.includes('begin snap') || h.includes('begin'));
+            const idxEnd = headers.findIndex(h => h.includes('end snap') || h.includes('end'));
+
+            rows.slice(1).forEach(row => {
+                const cells = row.cells;
+                if (cells.length > 1) {
+                    memoryStats.push({
+                        component: idxName !== -1 ? cells[idxName].textContent?.trim() || '' : '',
+                        beginVal: idxBegin !== -1 ? cells[idxBegin].textContent?.trim() || '' : '',
+                        endVal: idxEnd !== -1 ? cells[idxEnd].textContent?.trim() || '' : ''
+                    });
+                }
+            });
+        }
+    }
+
+    // 3.5 Wait Events
+    const waitTable = findTable(
+        ['Top_10_Foreground_Events_by_Total_Wait_Time2', 'Top_10_Foreground_Events_by_Total_Wait_Time', 'Wait_Events(by_wait_time)2'],
+        ['Top 10 Foreground Events by Total Wait Time', 'Wait Events (by wait time)']
+    );
+
+    const waitEvents: WdrWaitEvent[] = [];
     if (waitTable) {
         const rows = Array.from(waitTable.querySelectorAll('tr'));
         if (rows.length > 1) {
@@ -141,10 +247,11 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
             
             let idxTotal = findCol(['total wait time', 'time(us)']);
             let idxAvg = findCol(['avg wait time']);
-            let idxMax = findCol(['max wait time', 'max time']); // New check for Max Time
+            let idxMax = findCol(['max wait time', 'max time']); 
             let idxPct = findCol(['% db time', 'pct']);
 
             if (idxEvent === -1) {
+                // Heuristic fallback for headerless or specific structures
                 if (headerCells[0]?.includes('type') && headerCells[1]?.includes('event')) {
                     idxClass = 0; idxEvent = 1; idxTotal = 2; idxWaits = 3; idxAvg = 5;
                 } else if (headerCells[0]?.includes('event')) {
@@ -180,19 +287,9 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
 
     // 3.6 Parse Full SQL Text Map
     const sqlTextMap = new Map<number, string>();
-    let sqlTextTable: HTMLTableElement | null = null;
-    const textDiv = doc.getElementById('SQL_Text2') || doc.getElementById('SQL_Text');
-    if (textDiv) sqlTextTable = textDiv.querySelector('table');
-    if (!sqlTextTable) {
-        doc.querySelectorAll('table').forEach(tbl => {
-            const header = tbl.rows[0]?.textContent || '';
-            if (header.includes('Unique SQL Id') && header.includes('SQL Text')) {
-                sqlTextTable = tbl;
-            }
-        });
-    }
-    if (sqlTextTable) {
-        const rows = sqlTextTable.rows;
+    const textTable = findTable(['SQL_Text2', 'SQL_Text'], ['SQL Text']);
+    if (textTable) {
+        const rows = textTable.rows;
         const headerCells = rows[0].cells;
         let idColIdx = -1;
         let textColIdx = -1;
@@ -224,9 +321,11 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
         }
     }
 
-    // 4. Top SQL (Enhanced Parsing)
-    const topSqlDiv = doc.getElementById('SQL_ordered_by_Elapsed_Time2') || doc.getElementById('SQL_ordered_by_Elapsed_Time');
-    const topSqlTable = topSqlDiv?.querySelector('table');
+    // 4. Top SQL
+    const topSqlTable = findTable(
+        ['SQL_ordered_by_Elapsed_Time2', 'SQL_ordered_by_Elapsed_Time'], 
+        ['SQL ordered by Elapsed Time']
+    );
     const topSql: WdrTopSqlItem[] = [];
     if (topSqlTable) {
         const rows = Array.from(topSqlTable.querySelectorAll('tr'));
@@ -249,21 +348,11 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
             const idxMaxTime = getIdx(['max elapse time']);
             const idxTuplesAff = getIdx(['tuples affected']);
             const idxIoTime = getIdx(['data io time']);
-            const idxSortCnt = getIdx(['sort count']);
-            const idxSortTime = getIdx(['sort time']);
-            const idxSortMem = getIdx(['sort mem used']);
-            const idxSortSpillCnt = getIdx(['sort spill count']);
-            const idxSortSpillSz = getIdx(['sort spill size']);
-            const idxHashCnt = getIdx(['hash count']);
-            const idxHashTime = getIdx(['hash time']);
-            const idxHashMem = getIdx(['hash mem used']);
-            const idxHashSpillCnt = getIdx(['hash spill count']);
-            const idxHashSpillSz = getIdx(['hash spill size']);
             const idxText = getIdx(['sql text']);
 
             rows.slice(1).forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length < 5) return; // Basic validation
+                if (cells.length < 5) return; 
 
                 const getText = (i: number) => (i >= 0 && i < cells.length) ? cells[i].textContent?.trim() || '' : '';
                 const getNum = (i: number) => {
@@ -281,102 +370,151 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
                     sqlId: String(uniqueSqlId),
                     userName: getText(idxUser),
                     text: fullText,
-                    
                     totalTime: getNum(idxTotalTime),
                     cpuTime: getNum(idxCpu),
                     avgTime: getNum(idxAvgTime),
                     minTime: getNum(idxMinTime),
                     maxTime: getNum(idxMaxTime),
                     ioTime: getNum(idxIoTime),
-                    
                     rows: getNum(idxRows),
                     calls: getNum(idxCalls),
                     tuplesRead: getNum(idxTuplesRead),
                     tuplesAffected: getNum(idxTuplesAff),
-                    
                     physicalRead: getNum(idxPhyRead),
                     logicalRead: getNum(idxLogRead),
-                    
-                    sortCount: getNum(idxSortCnt),
-                    sortTime: getNum(idxSortTime),
-                    sortMemUsed: getNum(idxSortMem),
-                    sortSpillCount: getNum(idxSortSpillCnt),
-                    sortSpillSize: getNum(idxSortSpillSz),
-                    
-                    hashCount: getNum(idxHashCnt),
-                    hashTime: getNum(idxHashTime),
-                    hashMemUsed: getNum(idxHashMem),
-                    hashSpillCount: getNum(idxHashSpillCnt),
-                    hashSpillSize: getNum(idxHashSpillSz),
                 });
             });
         }
     }
 
     // 5. Object Stats (Tables & Indexes)
-    const objectStats: WdrObjectStat[] = [];
-    
-    // 5.1 User Tables
-    const tablesDiv = doc.getElementById('User_Tables_stats2') || doc.getElementById('User_Tables_stats');
-    const tablesTable = tablesDiv?.querySelector('table');
-    if (tablesTable) {
-        tablesTable.querySelectorAll('tr').forEach((row, idx) => {
-            if (idx === 0) return;
-            const cells = row.querySelectorAll('td');
-            if (cells.length > 10) {
-                objectStats.push({
-                    schema: cells[1].textContent?.trim() || '',
-                    name: cells[2].textContent?.trim() || '',
-                    type: 'Table',
-                    seqScan: parseInt(cells[3].textContent?.trim() || '0'),
-                    idxScan: parseInt(cells[5].textContent?.trim() || '0'),
-                    tupIns: parseInt(cells[7].textContent?.trim() || '0'),
-                    tupUpd: parseInt(cells[8].textContent?.trim() || '0'),
-                    tupDel: parseInt(cells[9].textContent?.trim() || '0'),
-                    liveTup: parseInt(cells[11].textContent?.trim() || '0'),
-                    deadTup: parseInt(cells[12].textContent?.trim() || '0')
-                });
-            }
-        });
-    }
+    const objectStatsMap = new Map<string, WdrObjectStat>();
 
-    // 5.2 User Indexes (Added)
-    const indexesDiv = doc.getElementById('User_Indexes_stats2') || doc.getElementById('User_Indexes_stats');
-    const indexesTable = indexesDiv?.querySelector('table');
-    if (indexesTable) {
-        indexesTable.querySelectorAll('tr').forEach((row, idx) => {
-            if (idx === 0) return;
-            const cells = row.querySelectorAll('td');
-            if (cells.length > 5) {
-                // Assuming: Schema, Table, Index, Idx Scan, Idx Tup Read, Idx Tup Fetch
-                objectStats.push({
-                    schema: cells[1].textContent?.trim() || '',
-                    tableName: cells[2].textContent?.trim() || '',
-                    name: cells[3].textContent?.trim() || '',
-                    type: 'Index',
-                    idxScan: parseInt(cells[4].textContent?.trim() || '0'),
-                    idxTupRead: parseInt(cells[5].textContent?.trim() || '0'),
-                    idxTupFetch: parseInt(cells[6]?.textContent?.trim() || '0')
+    const processStatsTable = (table: HTMLTableElement, type: 'Table' | 'Index') => {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        if (rows.length < 2) return;
+
+        const headerRow = rows[0];
+        const headers = Array.from(headerRow.cells).map(c => c.textContent?.trim().toLowerCase() || '');
+        const getColIdx = (candidates: string[]) => headers.findIndex(h => candidates.some(c => h === c || h.startsWith(c) || h.endsWith(c)));
+
+        const idxSchema = getColIdx(['schema']);
+        const idxRelname = getColIdx(['relname', 'table name', 'table']); 
+        const idxIndexRelname = getColIdx(['index relname', 'index name', 'index']);
+        const idxName = getColIdx(['name']);
+
+        const idxSeqScan = getColIdx(['seq scan']);
+        const idxIdxScan = getColIdx(['index scan']);
+        const idxTupIns = getColIdx(['tuple insert', 'insert', 'tup insert']);
+        const idxTupUpd = getColIdx(['tuple update', 'update', 'tup update']);
+        const idxTupDel = getColIdx(['tuple delete', 'delete', 'tup delete']);
+        const idxLive = getColIdx(['live tuple', 'live tup']);
+        const idxDead = getColIdx(['dead tuple', 'dead tup']);
+        const idxIdxTupRead = getColIdx(['index tuple read', 'index tup read']);
+        const idxIdxTupFetch = getColIdx(['index tuple fetch', 'index tup fetch']);
+
+        rows.slice(1).forEach(row => {
+            const cells = row.cells;
+            const getVal = (idx: number) => {
+                if (idx === -1 || idx >= cells.length) return undefined;
+                const txt = cells[idx].textContent?.trim().replace(/,/g, '');
+                return txt ? parseFloat(txt) : 0;
+            };
+            const getTxt = (idx: number) => (idx !== -1 && idx < cells.length) ? cells[idx].textContent?.trim() || '' : '';
+
+            let schema = getTxt(idxSchema);
+            let name = '';
+            let tableNameStr = undefined;
+
+            if (type === 'Table') {
+                if (idxRelname !== -1) name = getTxt(idxRelname);
+                else if (idxName !== -1) name = getTxt(idxName);
+            } else {
+                if (idxIndexRelname !== -1) name = getTxt(idxIndexRelname);
+                else if (idxName !== -1) name = getTxt(idxName);
+                if (idxRelname !== -1 && name !== getTxt(idxRelname)) tableNameStr = getTxt(idxRelname);
+            }
+
+            if (!name) return;
+
+            const uniqueKey = `${type}:${schema}.${name}`;
+            if (!objectStatsMap.has(uniqueKey)) {
+                objectStatsMap.set(uniqueKey, {
+                    schema,
+                    name,
+                    tableName: tableNameStr,
+                    type,
+                    seqScan: getVal(idxSeqScan),
+                    idxScan: getVal(idxIdxScan),
+                    tupIns: getVal(idxTupIns),
+                    tupUpd: getVal(idxTupUpd),
+                    tupDel: getVal(idxTupDel),
+                    liveTup: getVal(idxLive),
+                    deadTup: getVal(idxDead),
+                    idxTupRead: getVal(idxIdxTupRead),
+                    idxTupFetch: getVal(idxIdxTupFetch)
                 });
             }
         });
-    }
+    };
+
+    const allTables = Array.from(doc.querySelectorAll('table'));
+    allTables.forEach(table => {
+        let title = '';
+        let prev = table.previousElementSibling;
+        let attempts = 0;
+        while(prev && attempts < 3) {
+             const tag = prev.tagName.toLowerCase();
+             if (['h1','h2','h3','h4','h5','h6','div'].includes(tag)) {
+                 title += ' ' + (prev.textContent || '');
+                 if (prev.id) title += ' ' + prev.id;
+             }
+             prev = prev.previousElementSibling;
+             attempts++;
+        }
+        if (table.parentElement && table.parentElement.id) title += ' ' + table.parentElement.id;
+        if (table.rows.length > 0 && table.rows[0].cells.length === 1) {
+            title += ' ' + table.rows[0].cells[0].textContent;
+        }
+        title = title.replace(/_/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+
+        if (title.includes('user tables stats')) {
+            processStatsTable(table, 'Table');
+        } else if (title.includes('user index stats') || title.includes('user indexes stats')) {
+            processStatsTable(table, 'Index');
+        }
+    });
+
+    const objectStats = Array.from(objectStatsMap.values());
 
     // 6. Configs
-    const configsDiv = doc.getElementById('Configuration_settings2') || doc.getElementById('Configuration_settings');
-    const configsTable = configsDiv?.querySelector('table');
+    const configsTable = findTable(['Settings2', 'Settings', 'Configuration_settings2', 'Configuration_settings'], ['Configuration settings']);
     const configs: WdrConfigSetting[] = [];
     if (configsTable) {
-        configsTable.querySelectorAll('tr').forEach((row, idx) => {
-            if (idx === 0) return;
-            const cells = row.querySelectorAll('td');
-            if (cells.length >= 2) {
-                configs.push({
-                    name: cells[0].textContent?.trim() || '',
-                    value: cells[1].textContent?.trim() || ''
+        const rows = Array.from(configsTable.querySelectorAll('tr'));
+        if (rows.length > 1) {
+            const headerCells = Array.from(rows[0].cells).map(c => c.textContent?.trim().toLowerCase() || '');
+            const findCol = (candidates: string[]) => headerCells.findIndex(h => candidates.some(c => h === c || h.includes(c)));
+            
+            const idxName = findCol(['name']);
+            const idxValue = findCol(['curent value', 'current value', 'value']);
+            const idxType = findCol(['type', 'vartype']);
+            const idxCategory = findCol(['category', 'context']);
+            
+            if (idxName !== -1 && idxValue !== -1) {
+                rows.slice(1).forEach(row => {
+                    const cells = row.cells;
+                    if (cells.length > Math.max(idxName, idxValue)) {
+                        configs.push({
+                            name: cells[idxName].textContent?.trim() || '',
+                            value: cells[idxValue].textContent?.trim() || '',
+                            type: idxType !== -1 ? (cells[idxType]?.textContent?.trim() || '') : '',
+                            category: idxCategory !== -1 ? (cells[idxCategory]?.textContent?.trim() || '') : ''
+                        });
+                    }
                 });
             }
-        });
+        }
     }
 
     return {
@@ -394,9 +532,12 @@ export const parseWdrHtml = (html: string): WdrReportDetail => {
         snapshots,
         efficiency,
         loadProfile,
+        hostCpu,
+        ioProfile,
+        memoryStats,
         waitEvents,
         topSql: topSql.slice(0, 100),
-        objectStats: objectStats.slice(0, 200), // Limit for performace
+        objectStats: objectStats.slice(0, 500), 
         configs: configs
     };
 };

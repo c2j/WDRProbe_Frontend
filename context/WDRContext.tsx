@@ -7,8 +7,8 @@ interface WDRContextState {
   setReport: (report: WdrReportDetail | null) => void;
   risks: RiskIssue[];
   setRisks: (risks: RiskIssue[]) => void;
-  activeTab: 'overview' | 'wait' | 'sql' | 'obj';
-  setActiveTab: (tab: 'overview' | 'wait' | 'sql' | 'obj') => void;
+  activeTab: 'overview' | 'wait' | 'sql' | 'obj' | 'settings';
+  setActiveTab: (tab: 'overview' | 'wait' | 'sql' | 'obj' | 'settings') => void;
   selectedSql: any | null;
   setSelectedSql: (sql: any | null) => void;
   selectedObject: WdrObjectStat | null;
@@ -24,10 +24,10 @@ const WDRContext = createContext<WDRContextState | undefined>(undefined);
 export const WDRProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [report, setReport] = useState<WdrReportDetail | null>(null);
   const [risks, setRisks] = useState<RiskIssue[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'wait' | 'sql' | 'obj'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'wait' | 'sql' | 'obj' | 'settings'>('overview');
   const [selectedSql, setSelectedSql] = useState<any | null>(null);
   const [selectedObject, setSelectedObject] = useState<WdrObjectStat | null>(null);
-  const [objTypeFilter, setObjTypeFilter] = useState<'All' | 'Table' | 'Index'>('All');
+  const [objTypeFilter, setObjTypeFilter] = useState<'All' | 'Table' | 'Index'>('Table'); // Default to Table
   const [reportHistory, setReportHistory] = useState<WdrReportDetail[]>([]);
 
   return (
