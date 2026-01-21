@@ -6,7 +6,7 @@ import { WdrReportDetail } from '../types';
 import { 
   GitCompare, Upload, X, ArrowRight, ArrowUp, ArrowDown, 
   Minus, FileText, Database, Activity, Clock, Trash2,
-  BarChart2, AlignLeft, AlertCircle, Info, Lock
+  BarChart2, AlignLeft, AlertCircle, Info, Lock, User
 } from 'lucide-react';
 
 const WDRComparison: React.FC = () => {
@@ -22,6 +22,7 @@ const WDRComparison: React.FC = () => {
   // Added 'calls_diff' for frequency variation
   const [sqlSortMode, setSqlSortMode] = useState<'total' | 'avg' | 'diff' | 'calls_diff'>('total');
   const [selectedCompSqlId, setSelectedCompSqlId] = useState<number | null>(null);
+  const [sqlUserFilter, setSqlUserFilter] = useState<string>('All');
 
   const baselineInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
@@ -113,7 +114,13 @@ const WDRComparison: React.FC = () => {
   // --- Top SQL Logic ---
   const sortedTopSqls = useMemo(() => {
       if (!baseline) return [];
-      const items = [...baseline.topSql];
+      
+      // Filter by User first
+      let items = [...baseline.topSql];
+      if (sqlUserFilter !== 'All') {
+          items = items.filter(s => s.userName === sqlUserFilter);
+      }
+
       const target1 = targets[0];
 
       return items.sort((a, b) => {
@@ -148,7 +155,7 @@ const WDRComparison: React.FC = () => {
                   return b.totalTime - a.totalTime;
           }
       }).slice(0, 20);
-  }, [baseline, targets, sqlSortMode]);
+  }, [baseline, targets, sqlSortMode, sqlUserFilter]);
 
   // Comparison Data for Modal
   const getSqlComparisonData = (uniqueId: number) => {
@@ -188,6 +195,12 @@ const WDRComparison: React.FC = () => {
       if (sqlSortMode === 'calls_diff') return t('wdr.comp.metric.cps');
       return `${t('wdr.comp.metric.total')} (us)`;
   };
+
+  // Extract available users from baseline
+  const availableUsers = useMemo(() => {
+      if (!baseline) return [];
+      return Array.from(new Set(baseline.topSql.map(s => s.userName))).sort();
+  }, [baseline]);
 
   return (
     <div className="h-full flex flex-col space-y-4 relative">
@@ -299,10 +312,10 @@ const WDRComparison: React.FC = () => {
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-gray-50 text-gray-600 border-b border-gray-100">
                                     <tr>
-                                        <th className="px-4 py-3 font-medium">{t('rep.metric')}</th>
-                                        <th className="px-4 py-3 font-medium text-right bg-blue-50/30">{t('wdr.comp.baseline')}</th>
+                                        <th className="px-4 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">{t('rep.metric')}</th>
+                                        <th className="px-4 py-3 font-medium text-right bg-blue-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.baseline')}</th>
                                         {targets.map((_, i) => (
-                                            <th key={i} className="px-4 py-3 font-medium text-right bg-green-50/30">{t('wdr.comp.target')} #{i+1}</th>
+                                            <th key={i} className="px-4 py-3 font-medium text-right bg-green-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.target')} #{i+1}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -353,15 +366,15 @@ const WDRComparison: React.FC = () => {
                                 <table className="w-full text-sm text-left whitespace-nowrap">
                                     <thead className="bg-gray-50 text-gray-600 border-b border-gray-100">
                                         <tr>
-                                            <th className="px-4 py-3 font-medium">{t('wdr.comp.eventName')}</th>
-                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30">{t('wdr.comp.baseWaits')}</th>
-                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30">{t('wdr.comp.baseAvg')}(us)</th>
-                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30">{t('wdr.comp.baseMax')}(us)</th>
+                                            <th className="px-4 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">{t('wdr.comp.eventName')}</th>
+                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.baseWaits')}</th>
+                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.baseAvg')}(us)</th>
+                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.baseMax')}(us)</th>
                                             {targets.map((_, i) => (
                                                 <React.Fragment key={i}>
-                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30">T#{i+1} {t('wdr.comp.waits')}</th>
-                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30">T#{i+1} {t('wdr.comp.avg')}</th>
-                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30">T#{i+1} {t('wdr.comp.max')}</th>
+                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30 sticky top-0 border-b border-gray-200">T#{i+1} {t('wdr.comp.waits')}</th>
+                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30 sticky top-0 border-b border-gray-200">T#{i+1} {t('wdr.comp.avg')}</th>
+                                                    <th className="px-4 py-3 font-medium text-right bg-green-50/30 sticky top-0 border-b border-gray-200">T#{i+1} {t('wdr.comp.max')}</th>
                                                 </React.Fragment>
                                             ))}
                                         </tr>
@@ -428,36 +441,53 @@ const WDRComparison: React.FC = () => {
                                     <div className="font-semibold text-gray-700 flex items-center">
                                         <FileText size={16} className="mr-2 text-purple-500"/> {t('wdr.comp.topSql')}
                                     </div>
-                                    {/* Sort Tabs */}
-                                    <div className="flex space-x-1 bg-gray-200 p-0.5 rounded text-xs font-medium">
-                                        <button 
-                                            onClick={() => setSqlSortMode('total')}
-                                            className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'total' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                        >
-                                            {t('wdr.comp.sort.total')}
-                                        </button>
-                                        <button 
-                                            onClick={() => setSqlSortMode('avg')}
-                                            className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'avg' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                        >
-                                            {t('wdr.comp.sort.avg')}
-                                        </button>
-                                        <button 
-                                            onClick={() => setSqlSortMode('diff')}
-                                            className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'diff' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                            disabled={targets.length === 0}
-                                            title={targets.length === 0 ? "Requires a target to calculate difference" : ""}
-                                        >
-                                            {t('wdr.comp.sort.diff')}
-                                        </button>
-                                        <button 
-                                            onClick={() => setSqlSortMode('calls_diff')}
-                                            className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'calls_diff' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                                            disabled={targets.length === 0}
-                                            title={targets.length === 0 ? "Identify SQL with largest execution frequency change (Calls/Sec)" : ""}
-                                        >
-                                            {t('wdr.comp.sort.freq')}
-                                        </button>
+                                    <div className="flex space-x-3 items-center">
+                                        {/* User Filter */}
+                                        <div className="flex items-center space-x-2 mr-2">
+                                            <User size={14} className="text-gray-500" />
+                                            <select 
+                                                className="text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-purple-500"
+                                                value={sqlUserFilter}
+                                                onChange={(e) => setSqlUserFilter(e.target.value)}
+                                            >
+                                                <option value="All">All Users</option>
+                                                {availableUsers.map(u => (
+                                                    <option key={u} value={u}>{u}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Sort Tabs */}
+                                        <div className="flex space-x-1 bg-gray-200 p-0.5 rounded text-xs font-medium">
+                                            <button 
+                                                onClick={() => setSqlSortMode('total')}
+                                                className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'total' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                            >
+                                                {t('wdr.comp.sort.total')}
+                                            </button>
+                                            <button 
+                                                onClick={() => setSqlSortMode('avg')}
+                                                className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'avg' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                            >
+                                                {t('wdr.comp.sort.avg')}
+                                            </button>
+                                            <button 
+                                                onClick={() => setSqlSortMode('diff')}
+                                                className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'diff' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                disabled={targets.length === 0}
+                                                title={targets.length === 0 ? "Requires a target to calculate difference" : ""}
+                                            >
+                                                {t('wdr.comp.sort.diff')}
+                                            </button>
+                                            <button 
+                                                onClick={() => setSqlSortMode('calls_diff')}
+                                                className={`px-3 py-1 rounded transition-all ${sqlSortMode === 'calls_diff' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                disabled={targets.length === 0}
+                                                title={targets.length === 0 ? "Identify SQL with largest execution frequency change (Calls/Sec)" : ""}
+                                            >
+                                                {t('wdr.comp.sort.freq')}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -465,14 +495,14 @@ const WDRComparison: React.FC = () => {
                                 <table className="w-full text-sm text-left whitespace-nowrap">
                                     <thead className="bg-gray-50 text-gray-600 border-b border-gray-100 text-xs uppercase tracking-wide">
                                         <tr>
-                                            <th className="px-4 py-3 font-medium">{t('wdr.comp.uniqueId')}</th>
-                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30">
+                                            <th className="px-4 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">{t('wdr.comp.uniqueId')}</th>
+                                            <th className="px-4 py-3 font-medium text-right bg-blue-50/30 sticky top-0 border-b border-gray-200">
                                                 {t('wdr.comp.baseline')} {getSqlMetricHeader()}
                                             </th>
                                             {targets.map((_, i) => (
-                                                <th key={i} className="px-4 py-3 font-medium text-right bg-green-50/30">{t('wdr.comp.target')} #{i+1} {sqlSortMode === 'calls_diff' ? 'CPS' : (sqlSortMode === 'avg' ? t('wdr.comp.avg') : 'Total')}</th>
+                                                <th key={i} className="px-4 py-3 font-medium text-right bg-green-50/30 sticky top-0 border-b border-gray-200">{t('wdr.comp.target')} #{i+1} {sqlSortMode === 'calls_diff' ? 'CPS' : (sqlSortMode === 'avg' ? t('wdr.comp.avg') : 'Total')}</th>
                                             ))}
-                                            <th className="px-4 py-3 font-medium w-10 text-center">{t('wdr.comp.action')}</th>
+                                            <th className="px-4 py-3 font-medium w-10 text-center sticky top-0 bg-gray-50 border-b border-gray-200">{t('wdr.comp.action')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">

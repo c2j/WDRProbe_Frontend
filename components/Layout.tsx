@@ -125,7 +125,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <User size={16} />
                 </div>
                 <div className="text-sm">
-                    <p className="font-medium text-gray-700">Zhang San</p>
+                    <p className="font-medium text-gray-700">DBA</p>
                     <p className="text-xs text-gray-400">{t('header.role')}</p>
                 </div>
             </div>

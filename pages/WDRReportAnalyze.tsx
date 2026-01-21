@@ -4,9 +4,9 @@ import { parseWdrHtml } from '../utils/wdrParser';
 import { useI18n } from '../context/I18nContext';
 import { 
     Upload, FileText, Activity, Layers, Clock, Zap, 
-    AlertTriangle, CheckCircle, Search, ArrowUp, ArrowDown,
+    AlertTriangle, CheckCircle, Search, ArrowUp, ArrowDown, ArrowRight,
     Settings, Database, ChevronRight, X, BarChart2,
-    Info, Filter, MousePointer2, Cpu, HardDrive, Server, BookOpen, Code
+    Info, Filter, MousePointer2, Cpu, HardDrive, Server, BookOpen, Code, User, Table, Sliders
 } from 'lucide-react';
 import { WdrObjectStat, WdrReportDetail, WdrTopSqlItem, WdrWaitEvent } from '../types';
 import { Link } from 'react-router-dom';
@@ -15,7 +15,7 @@ import { Link } from 'react-router-dom';
 
 const SortHeader = ({ label, sortKey, currentSort, onSort, align = 'left' }: { label: string, sortKey: string, currentSort: { key: string, dir: string }, onSort: (k: string) => void, align?: 'left' | 'right' | 'center' }) => (
     <th 
-        className={`px-4 py-2 font-medium cursor-pointer hover:bg-gray-100 transition-colors select-none ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
+        className={`px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 z-10 bg-gray-50 border-b border-gray-200 ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
         onClick={() => onSort(sortKey)}
     >
         <div className={`flex items-center ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
@@ -41,6 +41,13 @@ const EfficiencyGauge: React.FC<{ name: string; value: number; target: number }>
         </div>
     );
 };
+
+const StatCard = ({ label, value, color = "blue" }: { label: string, value: string | number, color?: string }) => (
+    <div className={`p-4 rounded-lg border bg-${color}-50 border-${color}-100 flex flex-col`}>
+        <span className={`text-xs font-bold uppercase text-${color}-500 mb-1`}>{label}</span>
+        <span className={`text-xl font-bold text-${color}-800`}>{typeof value === 'number' ? value.toLocaleString() : value}</span>
+    </div>
+);
 
 const WDRKnowledgePanel = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
     const { t } = useI18n();
@@ -112,17 +119,27 @@ const WDRReportAnalyze: React.FC = () => {
         activeTab, setActiveTab,
         selectedSql, setSelectedSql,
         objTypeFilter, setObjTypeFilter,
-        selectedObject, setSelectedObject
+        selectedObject, setSelectedObject,
+        sqlUserFilter, setSqlUserFilter,
+        objSchemaFilter, setObjSchemaFilter
     } = useWDRContext();
 
     const [loading, setLoading] = useState(false);
     const [showKB, setShowKB] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Local Sorting State - Using string for key to avoid TS union type mismatch issues
+    // Local Sorting State
     const [sqlSort, setSqlSort] = useState<{key: string, dir: 'asc'|'desc'}>({ key: 'totalTime', dir: 'desc' });
     const [objSort, setObjSort] = useState<{key: string, dir: 'asc'|'desc'}>({ key: 'deadTup', dir: 'desc' });
     const [waitSort, setWaitSort] = useState<{key: string, dir: 'asc'|'desc'}>({ key: 'totalWaitTime', dir: 'desc' });
+    const [settingsSort, setSettingsSort] = useState<{key: string, dir: 'asc'|'desc'}>({ key: 'name', dir: 'asc' });
+
+    // Local Search State
+    const [settingsSearch, setSettingsSearch] = useState('');
+    const [sqlSearch, setSqlSearch] = useState('');
+    const [objSearch, setObjSearch] = useState('');
+    const [waitSearch, setWaitSearch] = useState('');
+    const [waitClassFilter, setWaitClassFilter] = useState<string>('All');
 
     // Handle Upload
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,7 +157,14 @@ const WDRReportAnalyze: React.FC = () => {
                 setActiveTab('overview');
                 setSelectedSql(null);
                 setSelectedObject(null);
-                setObjTypeFilter('Table'); // Reset to Table view by default
+                setObjTypeFilter('Table'); 
+                setSqlUserFilter('All');
+                setObjSchemaFilter('All');
+                setWaitClassFilter('All');
+                setSettingsSearch('');
+                setSqlSearch('');
+                setObjSearch('');
+                setWaitSearch('');
             } catch (err) {
                 console.error(err);
                 alert('Failed to parse WDR report. Please ensure it is a valid OpenGauss WDR HTML file.');
@@ -165,22 +189,64 @@ const WDRReportAnalyze: React.FC = () => {
             if (valA === undefined) return 1;
             if (valB === undefined) return -1;
             
+            // Case insensitive sort for strings
+            if (typeof valA === 'string' && typeof valB === 'string') {
+                return sortState.dir === 'asc' 
+                    ? valA.localeCompare(valB) 
+                    : valB.localeCompare(valA);
+            }
+
             if (valA < valB) return sortState.dir === 'asc' ? -1 : 1;
             if (valA > valB) return sortState.dir === 'asc' ? 1 : -1;
             return 0;
         });
     };
 
+    // Filter Options Calculation
+    const availableUsers = useMemo(() => {
+        if (!report) return [];
+        return Array.from(new Set(report.topSql.map(s => s.userName))).sort();
+    }, [report]);
+
+    const availableSchemas = useMemo(() => {
+        if (!report) return [];
+        return Array.from(new Set(report.objectStats.map(o => o.schema))).sort();
+    }, [report]);
+
+    const availableWaitClasses = useMemo(() => {
+        if (!report) return [];
+        return Array.from(new Set(report.waitEvents.map(e => e.waitClass))).sort();
+    }, [report]);
+
     // Derived Data
     const sortedTopSql = useMemo<WdrTopSqlItem[]>(() => {
         if (!report) return [];
-        return sortData(report.topSql, sqlSort);
-    }, [report, sqlSort]);
+        let filtered = report.topSql;
+        if (sqlUserFilter !== 'All') {
+            filtered = filtered.filter(s => s.userName === sqlUserFilter);
+        }
+        if (sqlSearch) {
+            const lower = sqlSearch.toLowerCase();
+            filtered = filtered.filter(s => s.text.toLowerCase().includes(lower));
+        }
+        return sortData(filtered, sqlSort);
+    }, [report, sqlSort, sqlUserFilter, sqlSearch]);
 
     const sortedWaitEvents = useMemo<WdrWaitEvent[]>(() => {
         if (!report) return [];
-        return sortData(report.waitEvents, waitSort);
-    }, [report, waitSort]);
+        let filtered = report.waitEvents;
+        
+        if (waitClassFilter !== 'All') {
+            filtered = filtered.filter(e => e.waitClass === waitClassFilter);
+        }
+        
+        if (waitSearch) {
+            const lower = waitSearch.toLowerCase();
+            filtered = filtered.filter(e => e.event.toLowerCase().includes(lower));
+        }
+
+        return sortData(filtered, waitSort);
+    }, [report, waitSort, waitClassFilter, waitSearch]);
 
     const sortedObjectStats = useMemo<WdrObjectStat[]>(() => {
         if (!report) return [];
@@ -188,8 +254,45 @@ const WDRReportAnalyze: React.FC = () => {
         if (objTypeFilter !== 'All') {
             filtered = filtered.filter(o => o.type === objTypeFilter);
         }
+        if (objSchemaFilter !== 'All') {
+            filtered = filtered.filter(o => o.schema === objSchemaFilter);
+        }
+        if (objSearch) {
+            const lower = objSearch.toLowerCase();
+            filtered = filtered.filter(o => 
+                o.name.toLowerCase().includes(lower) || 
+                (o.tableName && o.tableName.toLowerCase().includes(lower))
+            );
+        }
         return sortData(filtered, objSort);
-    }, [report, objTypeFilter, objSort]);
+    }, [report, objTypeFilter, objSort, objSchemaFilter, objSearch]);
+
+    const sortedConfigs = useMemo(() => {
+        if (!report) return [];
+        let filtered = report.configs;
+        if (settingsSearch) {
+            const lower = settingsSearch.toLowerCase();
+            filtered = filtered.filter(c => 
+                c.name.toLowerCase().includes(lower) || 
+                c.value.toLowerCase().includes(lower)
+            );
+        }
+        return sortData(filtered, settingsSort);
+    }, [report, settingsSort, settingsSearch]);
+
+    // Calculate Related SQLs for Selected Object
+    const relatedSqls = useMemo(() => {
+        if (!report || !selectedObject) return [];
+        // For Index, we look for SQLs touching the parent table
+        // For Table, we look for SQLs touching the table itself
+        const targetName = selectedObject.type === 'Index' ? selectedObject.tableName : selectedObject.name;
+        
+        if (!targetName) return [];
+        
+        const lowerTarget = targetName.toLowerCase();
+        // Heuristic: check if sql text contains the table name
+        return report.topSql.filter(sql => sql.text.toLowerCase().includes(lowerTarget));
+    }, [report, selectedObject]);
 
     // Simple Risk Analysis (Client-side)
     const risks = useMemo(() => {
@@ -302,6 +405,7 @@ const WDRReportAnalyze: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-auto bg-gray-50 p-4">
+                    {/* ... (Existing Tabs Content: overview) ... */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6 max-w-6xl mx-auto">
                             {/* Risks Banner */}
@@ -347,10 +451,10 @@ const WDRReportAnalyze: React.FC = () => {
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-gray-50 text-gray-600">
                                             <tr>
-                                                <th className="px-6 py-3 font-medium">{t('rep.metric')}</th>
-                                                <th className="px-6 py-3 font-medium text-right">{t('rep.perSec')}</th>
-                                                <th className="px-6 py-3 font-medium text-right">{t('rep.perTxn')}</th>
-                                                <th className="px-6 py-3 font-medium text-right">Per Exec</th>
+                                                <th className="px-6 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">{t('rep.metric')}</th>
+                                                <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">{t('rep.perSec')}</th>
+                                                <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">{t('rep.perTxn')}</th>
+                                                <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Per Exec</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
@@ -416,11 +520,11 @@ const WDRReportAnalyze: React.FC = () => {
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-gray-50 text-gray-600">
                                                 <tr>
-                                                    <th className="px-6 py-3 font-medium">IO Type</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Read Reqs</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Write Reqs</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Read Bytes</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Write Bytes</th>
+                                                    <th className="px-6 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">IO Type</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Read Reqs</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Write Reqs</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Read Bytes</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Write Bytes</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -450,9 +554,9 @@ const WDRReportAnalyze: React.FC = () => {
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-gray-50 text-gray-600">
                                                 <tr>
-                                                    <th className="px-6 py-3 font-medium">Component</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Begin Snap</th>
-                                                    <th className="px-6 py-3 font-medium text-right">End Snap</th>
+                                                    <th className="px-6 py-3 font-medium sticky top-0 bg-gray-50 border-b border-gray-200">Component</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">Begin Snap</th>
+                                                    <th className="px-6 py-3 font-medium text-right sticky top-0 bg-gray-50 border-b border-gray-200">End Snap</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -473,6 +577,33 @@ const WDRReportAnalyze: React.FC = () => {
 
                     {activeTab === 'wait' && (
                         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col">
+                            {/* Toolbar */}
+                            <div className="flex justify-between items-center p-2 border-b border-gray-100 shrink-0 bg-white">
+                                <div className="flex items-center space-x-2">
+                                    <Filter size={16} className="text-gray-500" />
+                                    <span className="text-sm font-medium text-gray-700">Filter Class:</span>
+                                    <select 
+                                        className="text-sm border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={waitClassFilter}
+                                        onChange={(e) => setWaitClassFilter(e.target.value)}
+                                    >
+                                        <option value="All">All Classes</option>
+                                        {availableWaitClasses.map(c => (
+                                            <option key={c} value={c}>{c}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-2 text-gray-400"/>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search Event..."
+                                        className="pl-8 pr-3 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={waitSearch}
+                                        onChange={(e) => setWaitSearch(e.target.value)}
+                                    />
+                                </div>
+                            </div>
                             <div className="overflow-auto flex-1">
                                 <table className="w-full text-sm text-left whitespace-nowrap">
                                     <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10 shadow-sm">
@@ -505,113 +636,174 @@ const WDRReportAnalyze: React.FC = () => {
                     )}
 
                     {activeTab === 'sql' && (
-                        <div className="flex h-full gap-4">
-                            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col">
-                                <div className="overflow-auto flex-1">
-                                    <table className="w-full text-sm text-left whitespace-nowrap">
-                                        <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10 shadow-sm">
-                                            <tr>
-                                                <SortHeader label="Unique SQL ID" sortKey="uniqueSqlId" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} />
-                                                <SortHeader label="User" sortKey="userName" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} />
-                                                <SortHeader label="Total Time (us)" sortKey="totalTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
-                                                <SortHeader label="Avg Time (us)" sortKey="avgTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
-                                                <SortHeader label="Calls" sortKey="calls" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
-                                                <SortHeader label="CPU Time" sortKey="cpuTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
-                                                <SortHeader label="IO Time" sortKey="ioTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
-                                                <th className="px-4 py-2 w-10"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100">
-                                            {sortedTopSql.map((sql, idx) => (
-                                                <tr key={idx} className={`hover:bg-blue-50 cursor-pointer ${selectedSql?.uniqueSqlId === sql.uniqueSqlId ? 'bg-blue-50' : ''}`} onClick={() => setSelectedSql(sql)}>
-                                                    <td className="px-4 py-2 font-mono text-xs text-blue-600">{sql.uniqueSqlId}</td>
-                                                    <td className="px-4 py-2 text-gray-600">{sql.userName}</td>
-                                                    <td className="px-4 py-2 text-right font-mono text-gray-800 font-medium">{sql.totalTime.toLocaleString()}</td>
-                                                    <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.avgTime.toLocaleString()}</td>
-                                                    <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.calls.toLocaleString()}</td>
-                                                    <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.cpuTime.toLocaleString()}</td>
-                                                    <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.ioTime.toLocaleString()}</td>
-                                                    <td className="px-4 py-2 text-gray-400"><ChevronRight size={16}/></td>
-                                                </tr>
+                        <div className="flex h-full gap-4 flex-col">
+                            {/* Toolbar */}
+                            <div className="flex justify-between items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm shrink-0">
+                                <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-2">
+                                        <User size={16} className="text-gray-500" />
+                                        <span className="text-sm font-medium text-gray-700">Filter User:</span>
+                                        <select 
+                                            className="text-sm border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                            value={sqlUserFilter}
+                                            onChange={(e) => setSqlUserFilter(e.target.value)}
+                                        >
+                                            <option value="All">All Users</option>
+                                            {availableUsers.map(u => (
+                                                <option key={u} value={u}>{u}</option>
                                             ))}
-                                        </tbody>
-                                    </table>
+                                        </select>
+                                    </div>
+                                    <div className="relative">
+                                        <Search size={14} className="absolute left-3 top-2 text-gray-400"/>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search SQL / Table..."
+                                            className="pl-8 pr-3 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-blue-500"
+                                            value={sqlSearch}
+                                            onChange={(e) => setSqlSearch(e.target.value)}
+                                        />
+                                    </div>
                                 </div>
+                                <span className="text-xs text-gray-400">Showing {sortedTopSql.length} queries</span>
                             </div>
-                            {/* SQL Details Side Panel */}
-                            {selectedSql && (
-                                <div className="w-96 bg-white rounded-lg border border-gray-200 shadow-xl flex flex-col animate-in slide-in-from-right-10">
-                                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-lg">
-                                        <h3 className="font-bold text-gray-700">SQL Details</h3>
-                                        <button onClick={() => setSelectedSql(null)} className="text-gray-400 hover:text-gray-600"><X size={18}/></button>
-                                    </div>
-                                    <div className="p-4 overflow-y-auto flex-1 space-y-4">
-                                        <div>
-                                            <div className="text-xs font-bold text-gray-500 uppercase mb-1">SQL Text</div>
-                                            <div className="bg-gray-800 text-gray-200 p-3 rounded text-xs font-mono break-all max-h-60 overflow-y-auto border border-gray-700 shadow-inner">
-                                                {selectedSql.text}
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="p-3 bg-blue-50 rounded border border-blue-100">
-                                                <div className="text-xs text-blue-500 font-bold uppercase">Rows Returned</div>
-                                                <div className="text-lg font-bold text-blue-800">{selectedSql.rows.toLocaleString()}</div>
-                                            </div>
-                                            <div className="p-3 bg-green-50 rounded border border-green-100">
-                                                <div className="text-xs text-green-500 font-bold uppercase">Tuples Read</div>
-                                                <div className="text-lg font-bold text-green-800">{selectedSql.tuplesRead?.toLocaleString() ?? '-'}</div>
-                                            </div>
-                                            <div className="p-3 bg-purple-50 rounded border border-purple-100">
-                                                <div className="text-xs text-purple-500 font-bold uppercase">Logical Reads</div>
-                                                <div className="text-lg font-bold text-purple-800">{selectedSql.logicalRead?.toLocaleString() ?? '-'}</div>
-                                            </div>
-                                            <div className="p-3 bg-orange-50 rounded border border-orange-100">
-                                                <div className="text-xs text-orange-500 font-bold uppercase">Physical Reads</div>
-                                                <div className="text-lg font-bold text-orange-800">{selectedSql.physicalRead?.toLocaleString() ?? '-'}</div>
-                                            </div>
-                                        </div>
-                                        <div className="pt-2 border-t border-gray-100 flex justify-end">
-                                            <Link to="/visualizer" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm flex items-center">
-                                                <Zap size={14} className="mr-2"/> Visualize Plan
-                                            </Link>
-                                        </div>
+
+                            <div className="flex flex-1 gap-4 min-h-0">
+                                <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+                                    <div className="overflow-auto flex-1">
+                                        <table className="w-full text-sm text-left whitespace-nowrap">
+                                            <thead className="bg-gray-50 text-gray-600">
+                                                <tr>
+                                                    <SortHeader label="Unique SQL ID" sortKey="uniqueSqlId" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} />
+                                                    <SortHeader label="User" sortKey="userName" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} />
+                                                    <SortHeader label="Total Time (us)" sortKey="totalTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
+                                                    <SortHeader label="Avg Time (us)" sortKey="avgTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
+                                                    <SortHeader label="Calls" sortKey="calls" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
+                                                    <SortHeader label="CPU Time" sortKey="cpuTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
+                                                    <SortHeader label="IO Time" sortKey="ioTime" currentSort={sqlSort} onSort={(k) => handleSort(setSqlSort, k)} align="right"/>
+                                                    <th className="px-4 py-2 w-10 sticky top-0 bg-gray-50 border-b border-gray-200"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {sortedTopSql.map((sql, idx) => (
+                                                    <tr key={idx} className={`hover:bg-blue-50 cursor-pointer ${selectedSql?.uniqueSqlId === sql.uniqueSqlId ? 'bg-blue-50' : ''}`} onClick={() => setSelectedSql(sql)}>
+                                                        <td className="px-4 py-2 font-mono text-xs text-blue-600">{sql.uniqueSqlId}</td>
+                                                        <td className="px-4 py-2 text-gray-600">{sql.userName}</td>
+                                                        <td className="px-4 py-2 text-right font-mono text-gray-800 font-medium">{sql.totalTime.toLocaleString()}</td>
+                                                        <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.avgTime.toLocaleString()}</td>
+                                                        <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.calls.toLocaleString()}</td>
+                                                        <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.cpuTime.toLocaleString()}</td>
+                                                        <td className="px-4 py-2 text-right font-mono text-gray-600">{sql.ioTime.toLocaleString()}</td>
+                                                        <td className="px-4 py-2 text-gray-400"><ChevronRight size={16}/></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
-                            )}
+                                {/* SQL Details Side Panel */}
+                                {selectedSql && (
+                                    <div className="w-96 bg-white rounded-lg border border-gray-200 shadow-xl flex flex-col animate-in slide-in-from-right-10">
+                                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-lg">
+                                            <h3 className="font-bold text-gray-700">SQL Details</h3>
+                                            <button onClick={() => setSelectedSql(null)} className="text-gray-400 hover:text-gray-600"><X size={18}/></button>
+                                        </div>
+                                        <div className="p-4 overflow-y-auto flex-1 space-y-4">
+                                            <div>
+                                                <div className="text-xs font-bold text-gray-500 uppercase mb-1">SQL Text</div>
+                                                <div className="bg-gray-800 text-gray-200 p-3 rounded text-xs font-mono break-all max-h-60 overflow-y-auto border border-gray-700 shadow-inner">
+                                                    {selectedSql.text}
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="p-3 bg-blue-50 rounded border border-blue-100">
+                                                    <div className="text-xs text-blue-500 font-bold uppercase">Rows Returned</div>
+                                                    <div className="text-lg font-bold text-blue-800">{selectedSql.rows.toLocaleString()}</div>
+                                                </div>
+                                                <div className="p-3 bg-green-50 rounded border border-green-100">
+                                                    <div className="text-xs text-green-500 font-bold uppercase">Tuples Read</div>
+                                                    <div className="text-lg font-bold text-green-800">{selectedSql.tuplesRead?.toLocaleString() ?? '-'}</div>
+                                                </div>
+                                                <div className="p-3 bg-purple-50 rounded border border-purple-100">
+                                                    <div className="text-xs text-purple-500 font-bold uppercase">Logical Reads</div>
+                                                    <div className="text-lg font-bold text-purple-800">{selectedSql.logicalRead?.toLocaleString() ?? '-'}</div>
+                                                </div>
+                                                <div className="p-3 bg-orange-50 rounded border border-orange-100">
+                                                    <div className="text-xs text-orange-500 font-bold uppercase">Physical Reads</div>
+                                                    <div className="text-lg font-bold text-orange-800">{selectedSql.physicalRead?.toLocaleString() ?? '-'}</div>
+                                                </div>
+                                            </div>
+                                            <div className="pt-2 border-t border-gray-100 flex justify-end">
+                                                <Link to="/visualizer" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm flex items-center">
+                                                    <Zap size={14} className="mr-2"/> Visualize Plan
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
                     {activeTab === 'obj' && (
                         <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                             {/* Filter Toolbar */}
-                            <div className="flex space-x-1 p-2 border-b border-gray-100 shrink-0 bg-white">
-                                <button
-                                    onClick={() => setObjTypeFilter('All')}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                                        objTypeFilter === 'All' 
-                                        ? 'bg-blue-100 text-blue-700' 
-                                        : 'text-gray-500 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    All Objects
-                                </button>
-                                {(['Table', 'Index'] as const).map(type => (
+                            <div className="flex justify-between items-center p-2 border-b border-gray-100 shrink-0 bg-white">
+                                <div className="flex space-x-1">
                                     <button
-                                        key={type}
-                                        onClick={() => setObjTypeFilter(type)}
+                                        onClick={() => setObjTypeFilter('All')}
                                         className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                                            objTypeFilter === type 
+                                            objTypeFilter === 'All' 
                                             ? 'bg-blue-100 text-blue-700' 
                                             : 'text-gray-500 hover:bg-gray-50'
                                         }`}
                                     >
-                                        {type} Statistics
+                                        All Objects
                                     </button>
-                                ))}
+                                    {(['Table', 'Index'] as const).map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setObjTypeFilter(type)}
+                                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                                objTypeFilter === type 
+                                                ? 'bg-blue-100 text-blue-700' 
+                                                : 'text-gray-500 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {type} Statistics
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-2">
+                                        <Table size={16} className="text-gray-500" />
+                                        <span className="text-sm font-medium text-gray-700">Filter Schema:</span>
+                                        <select 
+                                            className="text-sm border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                            value={objSchemaFilter}
+                                            onChange={(e) => setObjSchemaFilter(e.target.value)}
+                                        >
+                                            <option value="All">All Schemas</option>
+                                            {availableSchemas.map(s => (
+                                                <option key={s} value={s}>{s}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="relative">
+                                        <Search size={14} className="absolute left-3 top-2 text-gray-400"/>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search objects..."
+                                            className="pl-8 pr-3 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-blue-500"
+                                            value={objSearch}
+                                            onChange={(e) => setObjSearch(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                             <div className="flex-1 overflow-auto">
                                 <table className="w-full text-sm text-left whitespace-nowrap">
-                                    <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10 shadow-sm">
+                                    <thead className="bg-gray-50 text-gray-600">
                                         <tr>
                                             <SortHeader label="Schema" sortKey="schema" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} />
                                             <SortHeader label={objTypeFilter === 'Table' ? 'Table Name' : (objTypeFilter === 'Index' ? 'Index Name' : 'Object Name')} sortKey="name" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} />
@@ -623,7 +815,7 @@ const WDRReportAnalyze: React.FC = () => {
                                                 <>
                                                     <SortHeader label="Seq Scan" sortKey="seqScan" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} align="right"/>
                                                     <SortHeader label="Idx Scan" sortKey="idxScan" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} align="right"/>
-                                                    <th className="px-4 py-2 text-right">I/U/D</th>
+                                                    <th className="px-4 py-2 text-right sticky top-0 bg-gray-50 border-b border-gray-200">I/U/D</th>
                                                     <SortHeader label="Live Tuples" sortKey="liveTup" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} align="right"/>
                                                     <SortHeader label="Dead Tuples" sortKey="deadTup" currentSort={objSort} onSort={(k: string) => handleSort(setObjSort, k)} align="right"/>
                                                 </>
@@ -683,32 +875,146 @@ const WDRReportAnalyze: React.FC = () => {
                     )}
 
                     {activeTab === 'settings' && (
-                        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-gray-50 text-gray-600">
-                                    <tr>
-                                        <th className="px-6 py-3 font-medium">Parameter</th>
-                                        <th className="px-6 py-3 font-medium">Value</th>
-                                        <th className="px-6 py-3 font-medium">Type</th>
-                                        <th className="px-6 py-3 font-medium">Category</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {report.configs.map((conf, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50">
-                                            <td className="px-6 py-3 font-medium text-gray-700">{conf.name}</td>
-                                            <td className="px-6 py-3 font-mono text-blue-600 break-all">{conf.value}</td>
-                                            <td className="px-6 py-3 text-gray-500">{conf.type}</td>
-                                            <td className="px-6 py-3 text-gray-500">{conf.category}</td>
-                                        </tr>
-                                    ))}
-                                    {report.configs.length === 0 && (
+                        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
+                            {/* Toolbar */}
+                            <div className="flex justify-between items-center p-2 border-b border-gray-100 shrink-0 bg-white">
+                                <div className="flex items-center space-x-2">
+                                    <Sliders size={16} className="text-gray-500" />
+                                    <span className="text-sm font-medium text-gray-700">Configuration Settings</span>
+                                </div>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-2 text-gray-400"/>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search Key / Value..."
+                                        className="pl-8 pr-3 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={settingsSearch}
+                                        onChange={(e) => setSettingsSearch(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-auto">
+                                <table className="w-full text-sm text-left whitespace-nowrap">
+                                    <thead className="bg-gray-50 text-gray-600">
                                         <tr>
-                                            <td colSpan={4} className="p-8 text-center text-gray-400 italic">No configuration settings found.</td>
+                                            <SortHeader label="Parameter" sortKey="name" currentSort={settingsSort} onSort={(k) => handleSort(setSettingsSort, k)} />
+                                            <SortHeader label="Value" sortKey="value" currentSort={settingsSort} onSort={(k) => handleSort(setSettingsSort, k)} />
+                                            <SortHeader label="Type" sortKey="type" currentSort={settingsSort} onSort={(k) => handleSort(setSettingsSort, k)} />
+                                            <SortHeader label="Category" sortKey="category" currentSort={settingsSort} onSort={(k) => handleSort(setSettingsSort, k)} />
                                         </tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {sortedConfigs.map((conf, idx) => (
+                                            <tr key={idx} className="hover:bg-gray-50">
+                                                <td className="px-6 py-3 font-medium text-gray-700">{conf.name}</td>
+                                                <td className="px-6 py-3 font-mono text-blue-600 break-all">{conf.value}</td>
+                                                <td className="px-6 py-3 text-gray-500">{conf.type}</td>
+                                                <td className="px-6 py-3 text-gray-500">{conf.category}</td>
+                                            </tr>
+                                        ))}
+                                        {sortedConfigs.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="p-8 text-center text-gray-400 italic">No configuration settings found.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Object Detail Modal */}
+                    {selectedObject && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden border border-gray-200">
+                                {/* Header */}
+                                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                                    <div>
+                                        <div className="flex items-center space-x-2">
+                                            <Layers size={20} className={selectedObject.type === 'Table' ? 'text-blue-600' : 'text-purple-600'} />
+                                            <h3 className="font-bold text-xl text-gray-800">{selectedObject.name}</h3>
+                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${selectedObject.type === 'Table' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                {selectedObject.type}
+                                            </span>
+                                        </div>
+                                        <div className="text-sm text-gray-500 mt-1 flex items-center">
+                                            <span className="mr-3">Schema: {selectedObject.schema}</span>
+                                            {selectedObject.tableName && (
+                                                <span className="flex items-center">
+                                                    <ArrowRight size={12} className="mr-1"/> Parent Table: <span className="font-medium ml-1">{selectedObject.tableName}</span>
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setSelectedObject(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
+                                        <X size={24} />
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-auto p-6 bg-gray-50/50">
+                                    {/* Stats Cards */}
+                                    <div className="grid grid-cols-4 gap-4 mb-6">
+                                        {selectedObject.type === 'Table' ? (
+                                            <>
+                                                <StatCard label="Sequential Scans" value={selectedObject.seqScan ?? '-'} color="blue" />
+                                                <StatCard label="Index Scans" value={selectedObject.idxScan ?? '-'} color="indigo" />
+                                                <StatCard label="Live Tuples" value={selectedObject.liveTup ?? '-'} color="green" />
+                                                <StatCard label="Dead Tuples" value={selectedObject.deadTup ?? '-'} color="red" />
+                                                <StatCard label="Tuples Inserted" value={selectedObject.tupIns ?? '-'} color="gray" />
+                                                <StatCard label="Tuples Updated" value={selectedObject.tupUpd ?? '-'} color="gray" />
+                                                <StatCard label="Tuples Deleted" value={selectedObject.tupDel ?? '-'} color="gray" />
+                                            </>
+                                        ) : (
+                                            <>
+                                                <StatCard label="Index Scans" value={selectedObject.idxScan ?? '-'} color="purple" />
+                                                <StatCard label="Index Tuples Read" value={selectedObject.idxTupRead ?? '-'} color="blue" />
+                                                <StatCard label="Index Tuples Fetched" value={selectedObject.idxTupFetch ?? '-'} color="green" />
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Related SQLs */}
+                                    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[calc(100%-140px)]">
+                                        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                            <h4 className="font-semibold text-gray-700 flex items-center">
+                                                <FileText size={16} className="mr-2 text-gray-500"/>
+                                                Related SQLs ({relatedSqls.length})
+                                            </h4>
+                                            <span className="text-xs text-gray-400">Queries containing "{selectedObject.type === 'Index' ? selectedObject.tableName : selectedObject.name}"</span>
+                                        </div>
+                                        <div className="overflow-auto flex-1">
+                                            <table className="w-full text-sm text-left whitespace-nowrap">
+                                                <thead className="bg-gray-50 text-gray-600 sticky top-0 shadow-sm">
+                                                    <tr>
+                                                        <th className="px-4 py-2">ID</th>
+                                                        <th className="px-4 py-2">User</th>
+                                                        <th className="px-4 py-2">SQL Text</th>
+                                                        <th className="px-4 py-2 text-right">Execs</th>
+                                                        <th className="px-4 py-2 text-right">Total Time</th>
+                                                        <th className="px-4 py-2 text-right">Avg Time</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {relatedSqls.length > 0 ? relatedSqls.map((sql, idx) => (
+                                                        <tr key={idx} className="hover:bg-blue-50">
+                                                            <td className="px-4 py-2 font-mono text-xs text-blue-600">{sql.uniqueSqlId}</td>
+                                                            <td className="px-4 py-2 text-gray-600">{sql.userName}</td>
+                                                            <td className="px-4 py-2 font-mono text-xs text-gray-500 max-w-md truncate" title={sql.text}>{sql.text}</td>
+                                                            <td className="px-4 py-2 text-right font-mono">{sql.calls}</td>
+                                                            <td className="px-4 py-2 text-right font-mono">{sql.totalTime.toLocaleString()}</td>
+                                                            <td className="px-4 py-2 text-right font-mono text-gray-500">{sql.avgTime.toLocaleString()}</td>
+                                                        </tr>
+                                                    )) : (
+                                                        <tr>
+                                                            <td colSpan={6} className="p-8 text-center text-gray-400 italic">No related SQL found in Top SQL list.</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

@@ -15,6 +15,13 @@ interface WDRContextState {
   setSelectedObject: (obj: WdrObjectStat | null) => void;
   objTypeFilter: 'All' | 'Table' | 'Index';
   setObjTypeFilter: (filter: 'All' | 'Table' | 'Index') => void;
+  
+  // New Filters
+  sqlUserFilter: string;
+  setSqlUserFilter: (user: string) => void;
+  objSchemaFilter: string;
+  setObjSchemaFilter: (schema: string) => void;
+
   reportHistory: WdrReportDetail[];
   setReportHistory: React.Dispatch<React.SetStateAction<WdrReportDetail[]>>;
 }
@@ -27,7 +34,12 @@ export const WDRProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeTab, setActiveTab] = useState<'overview' | 'wait' | 'sql' | 'obj' | 'settings'>('overview');
   const [selectedSql, setSelectedSql] = useState<any | null>(null);
   const [selectedObject, setSelectedObject] = useState<WdrObjectStat | null>(null);
-  const [objTypeFilter, setObjTypeFilter] = useState<'All' | 'Table' | 'Index'>('Table'); // Default to Table
+  const [objTypeFilter, setObjTypeFilter] = useState<'All' | 'Table' | 'Index'>('Table'); 
+  
+  // New Filters State
+  const [sqlUserFilter, setSqlUserFilter] = useState<string>('All');
+  const [objSchemaFilter, setObjSchemaFilter] = useState<string>('All');
+
   const [reportHistory, setReportHistory] = useState<WdrReportDetail[]>([]);
 
   return (
@@ -38,6 +50,8 @@ export const WDRProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       selectedSql, setSelectedSql,
       selectedObject, setSelectedObject,
       objTypeFilter, setObjTypeFilter,
+      sqlUserFilter, setSqlUserFilter,
+      objSchemaFilter, setObjSchemaFilter,
       reportHistory, setReportHistory
     }}>
       {children}
