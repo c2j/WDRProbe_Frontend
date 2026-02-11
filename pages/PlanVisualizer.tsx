@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import { usePlanContext } from '../context/PlanContext';
+import { PLAN_OPERATORS_KB } from '../utils/knowledgeBaseData';
 
 // --- Types ---
 // PanelType is local UI state
@@ -38,43 +39,43 @@ interface NodeViewProps {
 
 interface KnowledgeEntry {
     key: string;
-    i18nKey: string;
     icon: any;
     keywords: string[];
 }
 
-const KNOWLEDGE_KEYS: KnowledgeEntry[] = [
-    { key: 'hintLeading', i18nKey: 'vis.kb.hintLeading', icon: GitBranch, keywords: [] },
-    { key: 'hintJoinMethod', i18nKey: 'vis.kb.hintJoinMethod', icon: RefreshCw, keywords: [] },
-    { key: 'hintRows', i18nKey: 'vis.kb.hintRows', icon: ListOrdered, keywords: [] },
-    { key: 'hintScan', i18nKey: 'vis.kb.hintScan', icon: Search, keywords: [] },
-    { key: 'hintStream', i18nKey: 'vis.kb.hintStream', icon: LinkIcon, keywords: [] },
-    { key: 'hintBlock', i18nKey: 'vis.kb.hintBlock', icon: Layers, keywords: [] },
-    { key: 'hintOther', i18nKey: 'vis.kb.hintOther', icon: FileCode, keywords: [] },
-    { key: 'diskSpill', i18nKey: 'vis.kb.diskSpill', icon: HardDrive, keywords: [] },
-    { key: 'cartesian', i18nKey: 'vis.kb.nestLoop', icon: XOctagon, keywords: [] },
-    { key: 'userFunc', i18nKey: 'vis.kb.userFunc', icon: FunctionSquare, keywords: ['func', 'fnc'] },
-    { key: 'rownum', i18nKey: 'vis.kb.rownum', icon: ListOrdered, keywords: ['rownum'] },
-    { key: 'idxOnlyScan', i18nKey: 'vis.kb.idxOnlyScan', icon: Zap, keywords: ['index only scan'] },
-    { key: 'bitmapScan', i18nKey: 'vis.kb.bitmapScan', icon: Layers, keywords: ['bitmap heap scan', 'bitmap index scan'] },
-    { key: 'partIter', i18nKey: 'vis.kb.partIter', icon: Layers, keywords: ['partition iterator'] },
-    { key: 'idxScan', i18nKey: 'vis.kb.idxScan', icon: Search, keywords: ['index scan', 'partitioned index scan'] },
-    { key: 'seqScan', i18nKey: 'vis.kb.seqScan', icon: AlignLeft, keywords: ['seq scan', 'tablesample scan'] },
-    { key: 'cteScan', i18nKey: 'vis.kb.cteScan', icon: FileCode, keywords: ['cte scan'] },
-    { key: 'subqueryScan', i18nKey: 'vis.kb.subqueryScan', icon: FileCode, keywords: ['subquery scan', 'subplan'] },
-    { key: 'nestLoop', i18nKey: 'vis.kb.nestLoop', icon: RefreshCw, keywords: ['nested loop'] },
-    { key: 'hashJoin', i18nKey: 'vis.kb.hashJoin', icon: GitBranch, keywords: ['hash join', 'hash right join', 'hash left join', 'hash anti join'] },
-    { key: 'mergeJoin', i18nKey: 'vis.kb.mergeJoin', icon: GitBranch, keywords: ['merge join'] },
-    { key: 'append', i18nKey: 'vis.kb.append', icon: LinkIcon, keywords: ['append'] },
-    { key: 'result', i18nKey: 'vis.kb.result', icon: CheckIcon, keywords: ['result'] },
-    { key: 'materialize', i18nKey: 'vis.kb.materialize', icon: Database, keywords: ['materialize'] },
-    { key: 'agg', i18nKey: 'vis.kb.agg', icon: Sigma, keywords: ['aggregate', 'group', 'hashaggregate', 'windowagg'] },
-    { key: 'sort', i18nKey: 'vis.kb.sort', icon: ArrowUpDownIcon, keywords: ['sort'] },
-    { key: 'limit', i18nKey: 'vis.kb.limit', icon: Minimize2, keywords: ['limit'] },
-];
-
 function ArrowUpDownIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> }
 function CheckIcon(props: any) { return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> }
+
+// Map keys to icons (Text content moved to utils/knowledgeBaseData.ts)
+const KB_ICONS: Record<string, any> = {
+    'hintLeading': GitBranch,
+    'hintJoinMethod': RefreshCw,
+    'hintRows': ListOrdered,
+    'hintScan': Search,
+    'hintStream': LinkIcon,
+    'hintBlock': Layers,
+    'hintOther': FileCode,
+    'diskSpill': HardDrive,
+    'cartesian': XOctagon,
+    'userFunc': FunctionSquare,
+    'rownum': ListOrdered,
+    'idxOnlyScan': Zap,
+    'bitmapScan': Layers,
+    'partIter': Layers,
+    'idxScan': Search,
+    'seqScan': AlignLeft,
+    'cteScan': FileCode,
+    'subqueryScan': FileCode,
+    'nestLoop': RefreshCw,
+    'hashJoin': GitBranch,
+    'mergeJoin': GitBranch,
+    'append': LinkIcon,
+    'result': CheckIcon,
+    'materialize': Database,
+    'agg': Sigma,
+    'sort': ArrowUpDownIcon,
+    'limit': Minimize2,
+};
 
 // --- Hint Analysis ---
 const detectHints = (sql: string) => {
@@ -303,7 +304,7 @@ const HistorySidebar: React.FC<{ isOpen: boolean; onClose: () => void; onLoad: (
 };
 
 const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey: string | null; detectedHints: string[] }> = ({ isOpen, onClose, activeKey, detectedHints }) => {
-    const { t } = useI18n();
+    const { t, language } = useI18n();
     const [searchTerm, setSearchTerm] = useState('');
     const refs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -315,8 +316,18 @@ const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey
 
     if (!isOpen) return null;
 
-    const filteredItems = KNOWLEDGE_KEYS.filter(k => 
-        t(`${k.i18nKey}.title`).toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // Use centralized PLAN_OPERATORS_KB
+    const lang = language === 'zh' ? 'zh' : 'en';
+    
+    // Construct display list
+    const listItems = Object.entries(PLAN_OPERATORS_KB).map(([key, data]) => ({
+        key,
+        icon: KB_ICONS[key] || Info, // Fallback icon
+        ...data
+    }));
+
+    const filteredItems = listItems.filter(k => 
+        k.title[lang].toLowerCase().includes(searchTerm.toLowerCase()) ||
         k.key.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -368,19 +379,19 @@ const KnowledgePanel: React.FC<{ isOpen: boolean; onClose: () => void; activeKey
                                     <Icon size={18} />
                                 </div>
                                 <div>
-                                    <h4 className={`font-bold text-sm ${isActive ? 'text-blue-700' : isDetected ? 'text-purple-700' : 'text-gray-800'}`}>{t(`${item.i18nKey}.title`)}</h4>
+                                    <h4 className={`font-bold text-sm ${isActive ? 'text-blue-700' : isDetected ? 'text-purple-700' : 'text-gray-800'}`}>{item.title[lang]}</h4>
                                     {isDetected && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">Detected</span>}
                                 </div>
                             </div>
-                            <p className="text-xs text-gray-600 mb-3 leading-relaxed">{t(`${item.i18nKey}.desc`)}</p>
+                            <p className="text-xs text-gray-600 mb-3 leading-relaxed">{item.desc[lang]}</p>
                             <div className="space-y-2">
                                 <div className="bg-green-50 p-2 rounded border border-green-100">
                                     <div className="flex items-center text-xs font-semibold text-green-700 mb-1"><ThumbsUp size={12} className="mr-1.5"/> {t('vis.kb.pros')}</div>
-                                    <p className="text-[10px] text-green-800 leading-snug">{t(`${item.i18nKey}.pros`)}</p>
+                                    <p className="text-[10px] text-green-800 leading-snug">{item.pros[lang]}</p>
                                 </div>
                                 <div className="bg-red-50 p-2 rounded border border-red-100">
                                     <div className="flex items-center text-xs font-semibold text-red-700 mb-1"><ThumbsDown size={12} className="mr-1.5"/> {t('vis.kb.cons')}</div>
-                                    <p className="text-[10px] text-red-800 leading-snug">{t(`${item.i18nKey}.cons`)}</p>
+                                    <p className="text-[10px] text-red-800 leading-snug">{item.cons[lang]}</p>
                                 </div>
                             </div>
                         </div>
@@ -885,8 +896,8 @@ const PlanVisualizer: React.FC = () => {
     const op = selectedNode.operation.toLowerCase();
     const details = (selectedNode.details || '').toLowerCase();
     if (details.includes('disk') || details.includes('spill') || details.includes('external merge')) return 'diskSpill';
-    const match = KNOWLEDGE_KEYS.find(k => k.keywords.some(kw => op.includes(kw)));
-    return match ? match.key : null;
+    const match = Object.entries(PLAN_OPERATORS_KB).find(([key, data]) => data.keywords.some(kw => op.includes(kw)));
+    return match ? match[0] : null;
   }, [selectedNode]);
 
   const maxSeverity = useMemo(() => {

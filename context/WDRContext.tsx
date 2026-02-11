@@ -24,6 +24,20 @@ interface WDRContextState {
 
   reportHistory: WdrReportDetail[];
   setReportHistory: React.Dispatch<React.SetStateAction<WdrReportDetail[]>>;
+
+  // Comparison Persistence State
+  comparisonBaseline: WdrReportDetail | null;
+  setComparisonBaseline: (report: WdrReportDetail | null) => void;
+  comparisonTargets: WdrReportDetail[];
+  setComparisonTargets: React.Dispatch<React.SetStateAction<WdrReportDetail[]>>;
+  comparisonActiveTab: 'metrics' | 'wait' | 'sql';
+  setComparisonActiveTab: (tab: 'metrics' | 'wait' | 'sql') => void;
+  comparisonSqlSortMode: 'total' | 'avg' | 'diff' | 'calls_diff';
+  setComparisonSqlSortMode: (mode: 'total' | 'avg' | 'diff' | 'calls_diff') => void;
+  comparisonSqlUserFilter: string;
+  setComparisonSqlUserFilter: (user: string) => void;
+  comparisonSqlSearch: string;
+  setComparisonSqlSearch: (search: string) => void;
 }
 
 const WDRContext = createContext<WDRContextState | undefined>(undefined);
@@ -42,6 +56,14 @@ export const WDRProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [reportHistory, setReportHistory] = useState<WdrReportDetail[]>([]);
 
+  // Comparison State
+  const [comparisonBaseline, setComparisonBaseline] = useState<WdrReportDetail | null>(null);
+  const [comparisonTargets, setComparisonTargets] = useState<WdrReportDetail[]>([]);
+  const [comparisonActiveTab, setComparisonActiveTab] = useState<'metrics' | 'wait' | 'sql'>('metrics');
+  const [comparisonSqlSortMode, setComparisonSqlSortMode] = useState<'total' | 'avg' | 'diff' | 'calls_diff'>('total');
+  const [comparisonSqlUserFilter, setComparisonSqlUserFilter] = useState<string>('All');
+  const [comparisonSqlSearch, setComparisonSqlSearch] = useState<string>('');
+
   return (
     <WDRContext.Provider value={{
       report, setReport,
@@ -52,7 +74,14 @@ export const WDRProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       objTypeFilter, setObjTypeFilter,
       sqlUserFilter, setSqlUserFilter,
       objSchemaFilter, setObjSchemaFilter,
-      reportHistory, setReportHistory
+      reportHistory, setReportHistory,
+      
+      comparisonBaseline, setComparisonBaseline,
+      comparisonTargets, setComparisonTargets,
+      comparisonActiveTab, setComparisonActiveTab,
+      comparisonSqlSortMode, setComparisonSqlSortMode,
+      comparisonSqlUserFilter, setComparisonSqlUserFilter,
+      comparisonSqlSearch, setComparisonSqlSearch
     }}>
       {children}
     </WDRContext.Provider>

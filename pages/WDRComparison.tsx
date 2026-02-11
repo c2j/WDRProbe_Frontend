@@ -1,28 +1,35 @@
-
 import React, { useState, useRef, useMemo } from 'react';
 import { useI18n } from '../context/I18nContext';
 import { parseWdrHtml } from '../utils/wdrParser';
 import { WdrReportDetail } from '../types';
+import { useWDRContext } from '../context/WDRContext';
 import { 
   GitCompare, Upload, X, ArrowRight, ArrowUp, ArrowDown, 
   Minus, FileText, Database, Activity, Clock, Trash2,
-  BarChart2, AlignLeft, AlertCircle, Info, Lock, User
+  BarChart2, AlignLeft, AlertCircle, Info, Lock, User, Lightbulb, Search
 } from 'lucide-react';
 
 const WDRComparison: React.FC = () => {
   const { t } = useI18n();
-  const [baseline, setBaseline] = useState<WdrReportDetail | null>(null);
-  const [targets, setTargets] = useState<WdrReportDetail[]>([]);
-  const [loading, setLoading] = useState(false);
   
-  // Page Tabs
-  const [activeTab, setActiveTab] = useState<'metrics' | 'wait' | 'sql'>('metrics');
+  // Use Context for persistent state
+  const { 
+      comparisonBaseline: baseline, 
+      setComparisonBaseline: setBaseline,
+      comparisonTargets: targets, 
+      setComparisonTargets: setTargets,
+      comparisonActiveTab: activeTab,
+      setComparisonActiveTab: setActiveTab,
+      comparisonSqlSortMode: sqlSortMode,
+      setComparisonSqlSortMode: setSqlSortMode,
+      comparisonSqlUserFilter: sqlUserFilter,
+      setComparisonSqlUserFilter: setSqlUserFilter,
+      comparisonSqlSearch: sqlSearch,
+      setComparisonSqlSearch: setSqlSearch
+  } = useWDRContext();
 
-  // State for Top SQL internal sorting
-  // Added 'calls_diff' for frequency variation
-  const [sqlSortMode, setSqlSortMode] = useState<'total' | 'avg' | 'diff' | 'calls_diff'>('total');
+  const [loading, setLoading] = useState(false);
   const [selectedCompSqlId, setSelectedCompSqlId] = useState<number | null>(null);
-  const [sqlUserFilter, setSqlUserFilter] = useState<string>('All');
 
   const baselineInputRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +69,12 @@ const WDRComparison: React.FC = () => {
 
   const removeTarget = (idx: number) => {
       setTargets(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const resetAll = () => {
+      setBaseline(null);
+      setTargets([]);
+      setSelectedCompSqlId(null);
   };
 
   const getWaitEventDescription = (event: string) => {
@@ -111,6 +124,37 @@ const WDRComparison: React.FC = () => {
       );
   };
 
+  // --- Comparison Risks / Insights ---
+  const comparisonRisks = useMemo(() => {
+      if (!baseline || targets.length === 0) return [];
+      const risks: Array<{title: string, desc: string, type: 'error'|'warning'}> = [];
+      const target = targets[0]; // Compare primarily with the first target
+
+      const checkLockSurge = (eventName: string, titleKey: string, descKey: string) => {
+          const baseLock = baseline.waitEvents.find(e => e.event === eventName);
+          const tgtLock = target.waitEvents.find(e => e.event === eventName);
+          
+          if (tgtLock) {
+              const baseWaits = baseLock ? baseLock.waits : 0;
+              const tgtWaits = tgtLock.waits;
+              
+              // Logic: Significant absolute presence (>100 waits) AND (surge > 50% OR baseline was 0)
+              if (tgtWaits > 100 && (tgtWaits > baseWaits * 1.5 || baseWaits === 0)) {
+                  risks.push({
+                      type: eventName === 'LockMgrLock' ? 'error' : 'warning',
+                      title: t(titleKey),
+                      desc: t(descKey)
+                  });
+              }
+          }
+      };
+
+      checkLockSurge('LockMgrLock', 'wdr.risk.lock.mgr.title', 'wdr.risk.lock.mgr.desc');
+      checkLockSurge('SInvalWriteLock', 'wdr.risk.lock.sinval.title', 'wdr.risk.lock.sinval.desc');
+
+      return risks;
+  }, [baseline, targets, t]);
+
   // --- Top SQL Logic ---
   const sortedTopSqls = useMemo(() => {
       if (!baseline) return [];
@@ -119,6 +163,12 @@ const WDRComparison: React.FC = () => {
       let items = [...baseline.topSql];
       if (sqlUserFilter !== 'All') {
           items = items.filter(s => s.userName === sqlUserFilter);
+      }
+
+      // Filter by Search Text
+      if (sqlSearch) {
+          const lower = sqlSearch.toLowerCase();
+          items = items.filter(s => s.text.toLowerCase().includes(lower));
       }
 
       const target1 = targets[0];
@@ -155,7 +205,7 @@ const WDRComparison: React.FC = () => {
                   return b.totalTime - a.totalTime;
           }
       }).slice(0, 20);
-  }, [baseline, targets, sqlSortMode, sqlUserFilter]);
+  }, [baseline, targets, sqlSortMode, sqlUserFilter, sqlSearch]);
 
   // Comparison Data for Modal
   const getSqlComparisonData = (uniqueId: number) => {
@@ -213,7 +263,7 @@ const WDRComparison: React.FC = () => {
                  </h2>
                  <div className="flex space-x-2">
                      <button 
-                        onClick={() => { setBaseline(null); setTargets([]); }} 
+                        onClick={resetAll} 
                         className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded border border-gray-200"
                      >
                         {t('wdr.comp.reset')}
@@ -303,6 +353,23 @@ const WDRComparison: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-auto p-4">
+                    
+                    {/* Insights Banner */}
+                    {comparisonRisks.length > 0 && (
+                        <div className="mb-6 space-y-2">
+                            <div className="text-sm font-bold text-gray-700 flex items-center"><Lightbulb size={16} className="text-yellow-500 mr-2"/> {t('wdr.comp.insights')}</div>
+                            {comparisonRisks.map((risk, idx) => (
+                                <div key={idx} className={`p-3 rounded border flex items-start ${risk.type === 'error' ? 'bg-red-50 border-red-100 text-red-800' : 'bg-orange-50 border-orange-100 text-orange-800'}`}>
+                                    <AlertCircle size={18} className="mr-3 mt-0.5 shrink-0"/>
+                                    <div>
+                                        <h4 className="font-bold text-sm">{risk.title}</h4>
+                                        <p className="text-xs mt-1 opacity-90">{risk.desc}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {/* 1. Key Metrics Comparison */}
                     {activeTab === 'metrics' && (
                         <div className="overflow-hidden">
@@ -455,6 +522,18 @@ const WDRComparison: React.FC = () => {
                                                     <option key={u} value={u}>{u}</option>
                                                 ))}
                                             </select>
+                                        </div>
+
+                                        {/* Search Filter */}
+                                        <div className="relative mr-2">
+                                            <Search size={14} className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400"/>
+                                            <input 
+                                                type="text" 
+                                                placeholder="Search SQL..."
+                                                className="pl-7 pr-2 py-1 text-xs border border-gray-300 rounded outline-none focus:ring-1 focus:ring-purple-500 w-40 transition-all focus:w-60"
+                                                value={sqlSearch}
+                                                onChange={(e) => setSqlSearch(e.target.value)}
+                                            />
                                         </div>
 
                                         {/* Sort Tabs */}

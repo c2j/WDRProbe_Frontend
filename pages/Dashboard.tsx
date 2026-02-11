@@ -1,75 +1,62 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend 
-} from 'recharts';
-import { Activity, Database, Server, AlertTriangle, ChevronDown, CheckCircle, AlertCircle } from 'lucide-react';
+  FileSearch, Scale, GitBranch, ArrowRight, CheckCircle, 
+  AlertTriangle, AlertCircle, PlayCircle, History, Database, Zap
+} from 'lucide-react';
 import { useI18n } from '../context/I18nContext';
 import { ApiService } from '../services/apiService';
-import { DashboardMetrics, InstanceSummary, WdrReport } from '../types';
-import { Link } from 'react-router-dom';
+import { InstanceSummary, WdrReport } from '../types';
+import { Link, useNavigate } from 'react-router-dom';
 
-const KPICard = ({ title, value, icon: Icon, color }: { title: string; value: string; icon: any; color: string }) => (
-  <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex items-center space-x-4">
-    <div className={`p-3 rounded-full bg-${color}-50 text-${color}-600`}>
-      <Icon size={24} />
-    </div>
-    <div>
-      <p className="text-sm text-gray-500">{title}</p>
-      <p className="text-2xl font-bold text-gray-800">{value}</p>
-    </div>
-  </div>
-);
+const StepCard = ({ title, desc, icon: Icon, action, actionLabel, link }: any) => {
+    const navigate = useNavigate();
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col h-full group">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                <Icon size={24} />
+            </div>
+            <h4 className="font-bold text-gray-800 text-lg mb-2">{title}</h4>
+            <p className="text-sm text-gray-500 mb-6 flex-1 leading-relaxed">{desc}</p>
+            <button 
+                onClick={() => navigate(link)}
+                className="flex items-center text-blue-600 font-medium text-sm hover:text-blue-700 group/btn"
+            >
+                {actionLabel} <ArrowRight size={16} className="ml-1 group-hover/btn:translate-x-1 transition-transform" />
+            </button>
+        </div>
+    );
+};
 
-interface InstanceCardProps {
-  instance: InstanceSummary;
-  onClick: () => void;
-}
-
-const InstanceCard: React.FC<InstanceCardProps> = ({ instance, onClick }) => {
+const InstanceStatusItem = ({ instance }: { instance: InstanceSummary }) => {
     const { t } = useI18n();
     const isHealthy = instance.status === 'Healthy';
     const isWarning = instance.status === 'Warning';
-    const color = isHealthy ? 'green' : isWarning ? 'yellow' : 'red';
+    const color = isHealthy ? 'green' : isWarning ? 'orange' : 'red';
     const Icon = isHealthy ? CheckCircle : isWarning ? AlertTriangle : AlertCircle;
 
     return (
-        <div 
-            onClick={onClick}
-            className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow cursor-pointer relative overflow-hidden group"
-        >
-            <div className={`absolute top-0 left-0 w-1 h-full bg-${color}-500`}></div>
-            <div className="flex justify-between items-start mb-3">
+        <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100 hover:border-blue-200 transition-colors">
+            <div className="flex items-center space-x-3">
+                <div className={`p-2 rounded-full bg-${color}-50 text-${color}-500`}>
+                    <Icon size={18} />
+                </div>
                 <div>
-                    <h4 className="font-bold text-gray-800 text-lg group-hover:text-blue-600 transition-colors">{instance.instanceName}</h4>
+                    <p className="font-bold text-gray-700">{instance.instanceName}</p>
                     <p className="text-xs text-gray-400">{t('dash.lastReport')}: {instance.lastReportTime}</p>
                 </div>
-                <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium bg-${color}-50 text-${color}-700`}>
-                    <Icon size={12} />
-                    <span>{t(`dash.${instance.status.toLowerCase()}`)}</span>
-                </div>
             </div>
-            <div className="flex justify-between items-end">
-                <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">{t('dash.score')}</p>
-                    <p className="text-2xl font-bold text-gray-700">{instance.healthScore}</p>
-                </div>
-                <div className="text-right">
-                     <p className="text-xs text-gray-500 uppercase tracking-wide">{t('dash.activeIssues')}</p>
-                     <p className="text-xl font-bold text-gray-700">{instance.activeIssues}</p>
-                </div>
+            <div className="text-right">
+                <p className="text-[10px] text-gray-400 uppercase font-bold">{t('dash.score')}</p>
+                <p className={`text-xl font-black text-${color}-600`}>{instance.healthScore}</p>
             </div>
         </div>
     );
 };
 
-const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444'];
-
 const Dashboard: React.FC = () => {
   const { t } = useI18n();
   const [instances, setInstances] = useState<InstanceSummary[]>([]);
-  const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [recentReports, setRecentReports] = useState<WdrReport[]>([]);
 
   useEffect(() => {
@@ -82,162 +69,120 @@ const Dashboard: React.FC = () => {
     loadInitData();
   }, []);
 
-  useEffect(() => {
-    const loadMetrics = async () => {
-        const data = await ApiService.getDashboardMetrics(selectedInstance || undefined);
-        setMetrics(data);
-    };
-    loadMetrics();
-  }, [selectedInstance]);
-
-  const filteredReports = selectedInstance 
-    ? recentReports.filter(r => r.instanceName === selectedInstance)
-    : recentReports;
-
-  // Localize pie data names
-  const pieData = metrics?.healthDistribution.map(item => ({
-      ...item,
-      name: t(`dash.${item.name.toLowerCase()}`)
-  }));
-
   return (
-    <div className="space-y-6">
-      {/* Header & Filter */}
-      <div className="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-         <h2 className="text-lg font-bold text-gray-800 mb-3 sm:mb-0">
-             {selectedInstance ? selectedInstance : t('menu.dashboard')}
-         </h2>
-         <div className="relative">
-             <select 
-                value={selectedInstance || ''}
-                onChange={(e) => setSelectedInstance(e.target.value || null)}
-                className="appearance-none bg-gray-50 border border-gray-300 text-gray-700 py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:bg-white focus:border-blue-500 text-sm font-medium w-48"
-             >
-                 <option value="">{t('dash.allInstances')}</option>
-                 {instances.map(inst => (
-                     <option key={inst.instanceName} value={inst.instanceName}>{inst.instanceName}</option>
-                 ))}
-             </select>
-             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                <ChevronDown size={14} />
-             </div>
-         </div>
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+      {/* Hero Section */}
+      <div className="relative rounded-2xl overflow-hidden bg-[#0f2c4b] text-white p-8 lg:p-12 shadow-xl">
+          <div className="absolute top-0 right-0 w-1/3 h-full bg-gradient-to-l from-blue-500/20 to-transparent pointer-events-none"></div>
+          <div className="relative z-10 max-w-3xl">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 bg-blue-500/20 rounded-full text-blue-300 text-xs font-bold mb-6 border border-blue-400/20">
+                  <Zap size={12} className="fill-current" />
+                  <span>GaussDB Toolchain</span>
+              </div>
+              <h1 className="text-3xl lg:text-4xl font-black mb-4 tracking-tight">
+                  {t('dash.welcome')}
+              </h1>
+              <p className="text-xl text-blue-100 font-medium mb-4">
+                  {t('dash.tagline')}
+              </p>
+              <p className="text-blue-200/80 leading-relaxed text-sm lg:text-base">
+                  {t('dash.description')}
+              </p>
+          </div>
       </div>
 
-      {/* Instance Overview Grid (Only shown when viewing All) */}
-      {!selectedInstance && instances.length > 0 && (
-          <div className="space-y-3">
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider">{t('dash.instanceOverview')}</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Three Steps Guide */}
+      <section className="space-y-4">
+          <h3 className="text-xl font-bold text-gray-800 flex items-center">
+              <PlayCircle size={24} className="mr-2 text-blue-600" />
+              {t('dash.steps.title')}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <StepCard 
+                  title={t('dash.step1.title')}
+                  desc={t('dash.step1.desc')}
+                  icon={FileSearch}
+                  actionLabel={t('dash.action.start')}
+                  link="/wdr-analysis"
+              />
+              <StepCard 
+                  title={t('dash.step2.title')}
+                  desc={t('dash.step2.desc')}
+                  icon={Scale}
+                  actionLabel={t('dash.action.compare')}
+                  link="/wdr-comparison"
+              />
+              <StepCard 
+                  title={t('dash.step3.title')}
+                  desc={t('dash.step3.desc')}
+                  icon={GitBranch}
+                  actionLabel={t('dash.action.visualize')}
+                  link="/visualizer"
+              />
+          </div>
+      </section>
+
+      {/* Instance Summary & Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Health Overview */}
+          <div className="lg:col-span-1 space-y-4">
+              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest flex items-center">
+                  <Database size={16} className="mr-2" />
+                  {t('dash.instanceOverview')}
+              </h3>
+              <div className="space-y-3">
                   {instances.map(inst => (
-                      <InstanceCard 
-                        key={inst.instanceName} 
-                        instance={inst} 
-                        onClick={() => setSelectedInstance(inst.instanceName)} 
-                      />
+                      <InstanceStatusItem key={inst.instanceName} instance={inst} />
                   ))}
+                  {instances.length === 0 && (
+                      <div className="p-8 text-center text-gray-400 bg-white rounded-xl border border-dashed border-gray-200 text-sm">
+                          No instances tracked.
+                      </div>
+                  )}
               </div>
           </div>
-      )}
 
-      {/* KPIs */}
-      {metrics && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in duration-500">
-            <KPICard title={t('dash.cpu')} value={metrics.cpu} icon={Activity} color="blue" />
-            <KPICard title={t('dash.mem')} value={metrics.mem} icon={Server} color="purple" />
-            <KPICard title={t('dash.tps')} value={metrics.tps} icon={Database} color="green" />
-            <KPICard title={t('dash.qps')} value={metrics.qps} icon={Database} color="indigo" />
+          {/* Recent Reports */}
+          <div className="lg:col-span-2 space-y-4">
+              <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest flex items-center">
+                      <History size={16} className="mr-2" />
+                      {t('dash.recentAnalyses')}
+                  </h3>
+                  <Link to="/reports" className="text-blue-600 text-xs font-bold hover:underline">{t('dash.view')}</Link>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50/50 border-b border-gray-100 text-gray-400 font-bold">
+                          <tr>
+                              <th className="px-6 py-4">{t('rep.instance')}</th>
+                              <th className="px-6 py-4">{t('rep.generated')}</th>
+                              <th className="px-6 py-4 text-right">{t('dash.viewDetail')}</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                          {recentReports.slice(0, 5).map(report => (
+                              <tr key={report.id} className="hover:bg-gray-50 transition-colors">
+                                  <td className="px-6 py-4 font-bold text-gray-700">{report.instanceName}</td>
+                                  <td className="px-6 py-4 text-gray-500">{report.generateTime}</td>
+                                  <td className="px-6 py-4 text-right">
+                                      <Link to={`/reports/${report.id}`} className="text-blue-600 hover:text-blue-800">
+                                          <ArrowRight size={18} className="inline" />
+                                      </Link>
+                                  </td>
+                              </tr>
+                          ))}
+                          {recentReports.length === 0 && (
+                              <tr>
+                                  <td colSpan={3} className="px-6 py-12 text-center text-gray-400 italic">
+                                      No analysis history found. Start by uploading a report!
+                                  </td>
+                              </tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
           </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Health Chart */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 lg:col-span-1">
-          <h3 className="font-semibold text-lg mb-4 text-gray-800">{t('dash.health')}</h3>
-          <div className="h-64">
-            {pieData && (
-                <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                    <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                    >
-                    {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" height={36}/>
-                </PieChart>
-                </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Trend Chart */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 lg:col-span-2">
-          <h3 className="font-semibold text-lg mb-4 text-gray-800">{t('dash.trend')}</h3>
-          <div className="h-64">
-             {metrics?.trendData && (
-                <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={metrics.trendData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} />
-                    <YAxis axisLine={false} tickLine={false} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 8 }} />
-                </LineChart>
-                </ResponsiveContainer>
-             )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Hot Issues */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-lg mb-4 text-gray-800 flex items-center">
-            <AlertTriangle size={20} className="text-orange-500 mr-2" /> {t('dash.hotIssues')}
-          </h3>
-          <ul className="space-y-4">
-            {metrics?.hotIssues.map((issue, idx) => (
-                <li key={idx} className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0">
-                    <div>
-                        <p className="text-sm font-medium text-gray-800">{issue.title}</p>
-                        <p className="text-xs text-gray-400">{issue.desc}</p>
-                    </div>
-                    <button className="text-blue-600 text-sm hover:underline">{t('dash.details')}</button>
-                </li>
-            ))}
-            {!metrics?.hotIssues.length && <li className="text-gray-400 text-sm italic">No hot issues detected.</li>}
-          </ul>
-        </div>
-
-         {/* Recent Reports */}
-         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-lg mb-4 text-gray-800">{t('dash.recentReports')}</h3>
-          <div className="relative pl-6 border-l-2 border-gray-200 space-y-6">
-            {filteredReports.slice(0, 3).map(report => (
-                <div key={report.id} className="relative group">
-                    <span className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border-2 border-white transition-colors ${report.status === 'Success' ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                    <p className="text-xs text-gray-400">{report.generateTime}</p>
-                    <div className="flex justify-between items-center mt-1">
-                        <div>
-                            <p className="text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">{report.instanceName}</p>
-                            <p className="text-xs text-gray-500">{t('rep.id')}: #{report.id}</p>
-                        </div>
-                        <Link to="/reports" className="text-blue-600 text-xs px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors">{t('dash.view')}</Link>
-                    </div>
-                </div>
-            ))}
-            {filteredReports.length === 0 && <div className="text-gray-400 text-sm italic">No recent reports found.</div>}
-          </div>
-        </div>
       </div>
     </div>
   );
